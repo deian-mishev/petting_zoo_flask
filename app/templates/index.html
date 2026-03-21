@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>Agent Playground</title>
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"
+        integrity="sha384-mkQ3/7FUtcGyoppY6bz/PORYoGqOl7/aSUMn2ymDOJcapfS6PHqxhRTMh1RR0Q6+"
+        crossorigin="anonymous"></script>
+    <style>
+        body {
+            background-image: url('{{ url_for("static", filename="images/background.png") }}');
+            background-size: 2450px 2050px;
+            background-position: -235px -640px;
+            background-repeat: no-repeat;
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            position: relative;
+        }
+
+        #screen-container {
+            position: absolute;
+            top: 174px;
+            left: 681px;
+            width: 480px;
+            padding: 30px;
+            background: rgb(112 127 101);
+            border-radius: 20px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+        }
+
+        #screen-container h1 {
+            margin: 0 0 20px 0;
+            font-size: 30px;
+            color: #292102;
+            text-align: center;
+            text-shadow: 1px 1px 2px white;
+        }
+
+        label {
+            font-weight: bold;
+            color: #333;
+            align-self: flex-start;
+        }
+
+        select,
+        button {
+            padding: 10px;
+            width: 100%;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        button {
+            background-color: #4CAF50;
+            color: white;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        button:disabled {
+            background-color: #aaa;
+            cursor: not-allowed;
+        }
+
+        img#video {
+            position: relative;
+            top: 142px;
+            left: 652px;
+            z-index: 1;
+            background-image: url('{{ url_for("static", filename="images/intro.png") }}');
+            background-size: cover;
+            background-position-y: -100px;
+            background-repeat: no-repeat;
+            background-color: #535252;
+            border-radius: 10px;
+            border-bottom-right-radius: 30px;
+            outline: none;
+            box-shadow: none;
+            overflow: hidden;
+            display: block;
+            background-clip: padding-box;
+            box-sizing: border-box;
+            transform: translateZ(0);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="screen-container">
+        <h1 id="title">Agent Playground</h1>
+
+        <label for="envSelect">Environment:</label>
+        <select id="envSelect"></select>
+
+        <div id="player-config"></div>
+
+        <button id="startBtn" disabled>Start</button>
+    </div>
+
+    <img id="video" width="{{ width }}" height="{{ height }}" />
+
+    <script src="{{ url_for('static', filename='js/agent-client.js') }}"></script>
+</body>
+
+</html>
