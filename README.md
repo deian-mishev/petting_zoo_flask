@@ -109,56 +109,90 @@ AutoROM --accept-license
 
 ## Environment Variables
 
-Create a `.env` file in the project root. Required variables:
+Copy `test_run/.env.example` to `.env` in the project root and fill in your values:
 
 ```env
 # Flask
-FLASK_KEY=your_secret_key
+FLASK_KEY=change-me-in-production
 FLASK_RUN_PORT=5000
 
-# OAuth2 / Keycloak
-OAUTH2_CLIENT_ID=your_client_id
-OAUTH2_CLIENT_SECRET=your_client_secret
-OAUTH2_SERVER_URL=https://your-keycloak-host
-OAUTH2_REALM=your_realm
+# Rendering
+AGENT_VID_WIDTH=160
+AGENT_VID_HEIGHT=210
 
 # MongoDB
-MONGO_DB_URI=mongodb://localhost:27017
+MONGO_DB_URI=mongodb://localhost:27017/rl_db
 
-# Model paths
-ATTARI_PRO_MODEL=./models/atari_pro.keras
-ATTARI_PRO_WEIGHTS_PATH=./models/atari_pro.weights.h5
+# OAuth2 / Keycloak
+OAUTH2_SERVER_URL=http://localhost:8080
+OAUTH2_REALM=petting-zoo
+OAUTH2_CLIENT_ID=petting-zoo-client
+OAUTH2_CLIENT_SECRET=dev-secret-change-in-prod
 
-# Per-environment model paths (one per supported game)
-BOXING_MODEL_PATH=./models/boxing_v2.keras
-TENNIS_MODEL_PATH=./models/tennis_v3.keras
-# ... etc.
-
-# Rendering
-AGENT_VID_HEIGHT=210
-AGENT_VID_WIDTH=160
+# Model paths (Atari Pro multi-head model)
+ATTARI_PRO_MODEL=./resources/models/keras/atari_pro.keras
+ATTARI_PRO_WEIGHTS_PATH=./resources/models/keras/atari_pro.weights.h5
 ```
+
+Per-environment models are saved automatically to `./resources/models/keras/` on training. The `resources/` directory is git-ignored.
 
 ## Running and Building
 
 * **WITH CLI COMMANDS**
 
-    Navigate to the `petting_zoo_flask` folder and run:
+    Install dependencies and ROMs, then run:
 
     ```sh
+    pip install -r requirements.txt
+    AutoROM --accept-license
     python run.py
     ```
 
     The server starts on the port defined by `FLASK_RUN_PORT` (default `5000`).
+    MongoDB and Keycloak must be running and reachable at the URIs in `.env`.
 
-* **WITH DOCKER**
+* **WITH DOCKER COMPOSE (recommended for local dev)**
 
-    Build and run the container:
+    All services (app, MongoDB, Keycloak) are defined in `test_run/docker-compose.yml`.
+
+    First-time setup:
 
     ```sh
-    docker build -t petting-zoo-flask .
-    docker run -p 5000:5000 --env-file .env petting-zoo-flask
+    cp test_run/.env.example .env
+    # edit .env as needed
+    cd test_run
+    docker compose up --build
     ```
+
+    Subsequent runs (no code changes):
+
+    ```sh
+    cd test_run
+    docker compose up
+    ```
+
+    **Services:**
+
+    | Service   | URL                        | Notes                              |
+    |-----------|----------------------------|------------------------------------|
+    | App       | http://localhost:5000      | Flask + Socket.IO                  |
+    | Keycloak  | http://localhost:8080      | Admin console: `admin / admin`     |
+    | MongoDB   | mongodb://localhost:27017  | Database: `rl_db`                  |
+
+    Trained models are persisted to `./resources/` on the host via a Docker volume mount and survive container restarts.
+
+* **Keycloak — pre-seeded configuration**
+
+    The realm import at `test_run/keycloak/realm-export.json` seeds the following on first boot:
+
+    | Item            | Value                        |
+    |-----------------|------------------------------|
+    | Realm           | `petting-zoo`                |
+    | Client ID       | `petting-zoo-client`         |
+    | Client secret   | `dev-secret-change-in-prod`  |
+    | Redirect URI    | `http://localhost:5000/*`    |
+    | Roles           | `User`, `Admin`              |
+    | Demo users      | `admin / admin123` (User + Admin), `player / player123` (User) |
 
 ## API Reference
 
@@ -204,7 +238,16 @@ petting_zoo_flask/
 ├── run.py                        # Entry point — registers blueprints, starts server
 ├── Dockerfile
 ├── requirements.txt
+├── .env                          # git-ignored — copy from test_run/.env.example
+├── .gitignore
 ├── wsl-dev-deps.sh               # WSL dependency helper script
+├── resources/                    # git-ignored — trained models saved here
+│   └── models/keras/
+├── test_run/                     # Docker Compose dev environment
+│   ├── docker-compose.yml
+│   ├── .env.example
+│   └── keycloak/
+│       └── realm-export.json     # Pre-seeded realm, client, roles, and users
 └── app/
     ├── __init__.py               # Flask app, SocketIO, and global session store
     ├── config/

@@ -1,0 +1,79 @@
+{
+  "id": "petting-zoo",
+  "realm": "petting-zoo",
+  "displayName": "Petting Zoo",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "clients": [
+    {
+      "clientId": "petting-zoo-client",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "clientAuthenticatorType": "client-secret",
+      "secret": "dev-secret-change-in-prod",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "publicClient": false,
+      "redirectUris": [
+        "http://localhost:5000/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5000"
+      ],
+      "attributes": {
+        "post.logout.redirect.uris": "http://localhost:5000/*"
+      },
+      "fullScopeAllowed": true
+    }
+  ],
+  "roles": {
+    "realm": [
+      {
+        "name": "User",
+        "description": "Regular user — can play games"
+      },
+      {
+        "name": "Admin",
+        "description": "Admin — can trigger training runs"
+      }
+    ]
+  },
+  "users": [
+    {
+      "username": "admin",
+      "email": "admin@example.com",
+      "firstName": "Admin",
+      "lastName": "User",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["User", "Admin"]
+    },
+    {
+      "username": "player",
+      "email": "player@example.com",
+      "firstName": "Regular",
+      "lastName": "Player",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "player123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["User"]
+    }
+  ]
+}
