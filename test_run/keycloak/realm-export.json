@@ -19,13 +19,13 @@
       "serviceAccountsEnabled": false,
       "publicClient": false,
       "redirectUris": [
-        "http://localhost:5000/*"
+        "http://localhost:5001/*"
       ],
       "webOrigins": [
-        "http://localhost:5000"
+        "http://localhost:5001"
       ],
       "attributes": {
-        "post.logout.redirect.uris": "http://localhost:5000/*"
+        "post.logout.redirect.uris": "http://localhost:5001/*"
       },
       "fullScopeAllowed": true
     }

@@ -18,7 +18,13 @@ OAUTH2_REALM = os.getenv("OAUTH2_REALM")
 OAUTH2_LOGOUT_URL = f"{OAUTH2_SERVER_URL}/realms/{OAUTH2_REALM}/protocol/openid-connect/logout"
 
 OAUTH2_JWKS_URL = f"{OAUTH2_SERVER_URL}/realms/{OAUTH2_REALM}/protocol/openid-connect/certs"
-jwks_keys = requests.get(OAUTH2_JWKS_URL).json()['keys']
+_jwks_keys = None
+
+def _get_jwks_keys():
+    global _jwks_keys
+    if _jwks_keys is None:
+        _jwks_keys = requests.get(OAUTH2_JWKS_URL, timeout=5).json()['keys']
+    return _jwks_keys
 
 app = app.app
 oauth = OAuth(app)
@@ -31,13 +37,13 @@ oauth.register(
     access_token_url=f'{OAUTH2_SERVER_URL}/realms/{OAUTH2_REALM}/protocol/openid-connect/token',
     authorize_url=f'{OAUTH2_SERVER_URL}/realms/{OAUTH2_REALM}/protocol/openid-connect/auth',
     userinfo_endpoint=f'{OAUTH2_SERVER_URL}/realms/{OAUTH2_REALM}/protocol/openid-connect/userinfo',
-    client_kwargs={'scope': 'openid profile email'},
+    client_kwargs={'scope': 'openid profile email', 'timeout': 5},
 )
 
 def get_key(token):
     headers = jwt.get_unverified_header(token)
     kid = headers['kid']
-    for key in jwks_keys:
+    for key in _get_jwks_keys():
         if key['kid'] == kid:
             return key
     raise Exception("Public key not found")
@@ -111,16 +117,21 @@ def auth():
     userinfo = oauth.api.userinfo(token=token)
 
     roles = []
-    if 'realm_access' in userinfo:
-        roles.extend(userinfo['realm_access'].get('roles', []))
-    if 'resource_access' in userinfo:
-        for client_roles in userinfo['resource_access'].values():
-            roles.extend(client_roles.get('roles', []))
+    access_token = token.get('access_token')
+    if access_token:
+        try:
+            key = get_key(access_token)
+            decoded = jwt.decode(access_token, key, algorithms=["RS256"], audience=OAUTH2_CLIENT_ID)
+            roles = extract_roles(decoded)
+        except Exception:
+            pass
+
     session['id_token'] = token.get('id_token')
     session['user'] = userinfo
     session['roles'] = roles
 
-    return redirect(url_for('index'))
+    next_url = session.pop('next', url_for('index'))
+    return redirect(next_url)
 
 
 @app.route('/logout')
@@ -137,6 +148,6 @@ def logout():
 
 @app.route('/login')
 def login():
-    next_url = request.args.get('next', url_for('index'))
-    redirect_uri = url_for('auth', _external=True, next=next_url)
+    session['next'] = request.args.get('next', url_for('index'))
+    redirect_uri = url_for('auth', _external=True)
     return oauth.api.authorize_redirect(redirect_uri=redirect_uri)

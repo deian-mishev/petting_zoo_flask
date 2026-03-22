@@ -5,6 +5,7 @@ const envSelect = document.getElementById('envSelect');
 const playerConfigDiv = document.getElementById("player-config");
 const startBtn = document.getElementById('startBtn');
 const screen_container = document.getElementById('screen-container');
+const controls = document.getElementById('controls');
 
 let isConnected = false;
 let socket = null;
@@ -41,11 +42,6 @@ function gameLoop(timestamp) {
     if (timestamp - lastSendTime >= SEND_INTERVAL_MS) {
         if (pressedKeys.size > 0) {
             const keysArray = Array.from(pressedKeys);
-            keysArray.sort((a, b) => {
-                if (a === 's') return -1;
-                if (b === 's') return 1;
-                return 0;
-            });
             const keyState = keysArray.join(',');
 
             if (keyState !== lastSentKeys) {
@@ -77,6 +73,8 @@ function cleanup() {
 
     socket = null;
     title.textContent = "Episode ended, play again ..";
+    vid.style.display = 'none';
+    controls.style.display = 'none';
     screen_container.style.display = 'flex';
 
     checkEnableStart();
@@ -152,13 +150,15 @@ startBtn.addEventListener("click", () => {
             env: environment,
             players: JSON.stringify(players)
         },
-        transports: ['websocket']
+        transports: ['polling', 'websocket']
     });
 
     socket.on("connect",
         () => {
             title.textContent = "Agent Playground";
             screen_container.style.display = 'none';
+            vid.style.display = 'block';
+            controls.style.display = 'block';
             isConnected = true;
             checkEnableStart();
 
@@ -172,8 +172,12 @@ startBtn.addEventListener("click", () => {
         }
     );
 
-    socket.on("frame", (base64Frame) => {
-        vid.src = 'data:image/png;base64,' + base64Frame;
+    socket.on("frame", (frameBytes) => {
+        const blob = new Blob([frameBytes], { type: 'image/jpeg' });
+        const url = URL.createObjectURL(blob);
+        const prev = vid.src;
+        vid.src = url;
+        if (prev) URL.revokeObjectURL(prev);
     });
 
     socket.on("episode_end", cleanup);

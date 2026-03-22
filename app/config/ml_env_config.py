@@ -1,5 +1,4 @@
-from typing import Optional
-import eventlet
+import threading
 from pettingzoo.atari import boxing_v2, space_invaders_v2, tennis_v3, double_dunk_v3, ice_hockey_v2, mario_bros_v3, pong_v3, wizard_of_wor_v3
 from dataclasses import dataclass, field
 from typing import Optional, Callable
@@ -16,16 +15,15 @@ class EnvironmentConfig:
     observation_space: tuple[int, ...]
     epsilon: float = EPSILON
     env: Optional[Callable] = field(default=None)
-    lock: eventlet.semaphore.Semaphore = field(
-        default_factory=eventlet.semaphore.Semaphore)
+    lock: threading.Lock = field(default_factory=threading.Lock)
     
 ENVIRONMENTS = {
     'Boxing': EnvironmentConfig(
         name='boxing_v2',
         KEY_MAP={
             "0": 0, "s": 1, "8": 2, "6": 3, "4": 4, "2": 5,
-            "9": 6, "7": 7, "3": 8, "1": 9, "w": 10, "d": 11,
-            "a": 12, "x": 13, "e": 14, "q": 15, "c": 16, "z": 17
+            "9": 6, "7": 7, "3": 8, "1": 9, "w": 2, "d": 3,
+            "a": 4, "x": 5, "e": 6, "q": 7, "c": 8, "z": 9
         },
         model_path="./resources/models/keras/boxing_v2.keras",
         weights_path="./resources/models/keras/boxing_v2.weights.h5",
@@ -41,10 +39,10 @@ ENVIRONMENTS = {
         KEY_MAP={
             "8": 2, "6": 3, "4": 4,
             "2": 5, "9": 6, "7": 7,
-            "3": 8, "1": 9, "w": 10,
-            "d": 11, "a": 12, "x": 13,
-            "e": 14, "q": 15, "c": 16,
-            "z": 17, "s": 1, "0": 0
+            "3": 8, "1": 9, "w": 2,
+            "d": 3, "a": 4, "x": 5,
+            "e": 6, "q": 7, "c": 8,
+            "z": 9, "s": 1, "0": 0
         },
         model_path="./resources/models/keras/tennis_v3.keras",
         weights_path="./resources/models/keras/tennis_v3_weights.weights.h5",
@@ -76,10 +74,10 @@ ENVIRONMENTS = {
         KEY_MAP={
             "8": 2, "6": 3, "4": 4,
             "2": 5, "9": 6, "7": 7,
-            "3": 8, "1": 9, "w": 10,
-            "d": 11, "a": 12, "x": 13,
-            "e": 14, "q": 15, "c": 16,
-            "z": 17, "s": 1, "0": 0
+            "3": 8, "1": 9, "w": 2,
+            "d": 3, "a": 4, "x": 5,
+            "e": 6, "q": 7, "c": 8,
+            "z": 9, "s": 1, "0": 0
         },
         model_path="./resources/models/keras/mario_bros_v3.keras",
         weights_path="./resources/models/keras/mario_bros_v3_weights.weights.h5",
@@ -95,10 +93,10 @@ ENVIRONMENTS = {
         KEY_MAP={
             "8": 2, "6": 3, "4": 4,
             "2": 5, "9": 6, "7": 7,
-            "3": 8, "1": 9, "w": 10,
-            "d": 11, "a": 12, "x": 13,
-            "e": 14, "q": 15, "c": 16,
-            "z": 17, "s": 1, "0": 0
+            "3": 8, "1": 9, "w": 2,
+            "d": 3, "a": 4, "x": 5,
+            "e": 6, "q": 7, "c": 8,
+            "z": 9, "s": 1, "0": 0
         },
         model_path="./resources/models/keras/ice_hockey_v2.keras",
         weights_path="./resources/models/keras/ice_hockey_v2_weights.weights.h5",
@@ -114,10 +112,10 @@ ENVIRONMENTS = {
         KEY_MAP={
             "8": 2, "6": 3, "4": 4,
             "2": 5, "9": 6, "7": 7,
-            "3": 8, "1": 9, "w": 10,
-            "d": 11, "a": 12, "x": 13,
-            "e": 14, "q": 15, "c": 16,
-            "z": 17, "s": 1, "0": 0
+            "3": 8, "1": 9, "w": 2,
+            "d": 3, "a": 4, "x": 5,
+            "e": 6, "q": 7, "c": 8,
+            "z": 9, "s": 1, "0": 0
         },
         model_path="./resources/models/keras/double_dunk_v3.keras",
         weights_path="./resources/models/keras/double_dunk_v3_weights.weights.h5",

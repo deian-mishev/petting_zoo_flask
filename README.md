@@ -120,10 +120,10 @@ FLASK_RUN_PORT=5000
 AGENT_VID_WIDTH=160
 AGENT_VID_HEIGHT=210
 
-# MongoDB
+# MongoDB (Docker port mapped to localhost)
 MONGO_DB_URI=mongodb://localhost:27017/rl_db
 
-# OAuth2 / Keycloak
+# OAuth2 / Keycloak (Docker port mapped to localhost)
 OAUTH2_SERVER_URL=http://localhost:8080
 OAUTH2_REALM=petting-zoo
 OAUTH2_CLIENT_ID=petting-zoo-client
@@ -153,33 +153,34 @@ Per-environment models are saved automatically to `./resources/models/keras/` on
 
 * **WITH DOCKER COMPOSE (recommended for local dev)**
 
-    All services (app, MongoDB, Keycloak) are defined in `test_run/docker-compose.yml`.
+    `test_run/docker-compose.yml` runs MongoDB and Keycloak in Docker with ports mapped to `localhost`. The Flask app runs directly on the host — this avoids OAuth2 redirect URL conflicts between the browser and the server.
 
     First-time setup:
 
     ```sh
     cp test_run/.env.example .env
     # edit .env as needed
-    cd test_run
-    docker compose up --build
+    cd test_run && docker compose up -d
+    # wait for Keycloak to be healthy (~60s), then in the project root:
+    pip install -r requirements.txt
+    AutoROM --accept-license
+    python run.py
     ```
 
-    Subsequent runs (no code changes):
+    Subsequent runs:
 
     ```sh
-    cd test_run
-    docker compose up
+    cd test_run && docker compose up -d
+    python run.py
     ```
 
     **Services:**
 
     | Service   | URL                        | Notes                              |
     |-----------|----------------------------|------------------------------------|
-    | App       | http://localhost:5000      | Flask + Socket.IO                  |
+    | Flask app | http://localhost:5000      | Run locally via `python run.py`    |
     | Keycloak  | http://localhost:8080      | Admin console: `admin / admin`     |
     | MongoDB   | mongodb://localhost:27017  | Database: `rl_db`                  |
-
-    Trained models are persisted to `./resources/` on the host via a Docker volume mount and survive container restarts.
 
 * **Keycloak — pre-seeded configuration**
 

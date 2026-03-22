@@ -52,7 +52,13 @@ class MLService:
 
         for save_key, agent_state in shared_models.items():
             with agent_state.lock:
+                if not agent_state.model_path or not agent_state.weights_path:
+                    app.logger.warning(f"{sid}: Skipping save for {save_key} — model path not configured")
+                    continue
                 app.logger.info(f"{sid}: Saving model for {save_key}")
+                parent = os.path.dirname(agent_state.model_path)
+                if parent:
+                    os.makedirs(parent, exist_ok=True)
                 agent_state.q_network.save(agent_state.model_path)
                 agent_state.target_q_network.save_weights(agent_state.weights_path)
 

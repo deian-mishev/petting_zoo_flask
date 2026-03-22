@@ -1,4 +1,5 @@
-import eventlet
+import threading
+import time
 import tensorflow as tf
 from flask_socketio import SocketIO
 from app import app
@@ -14,20 +15,20 @@ class SessionRunner:
         self.sid = sid
         self.session = session
         self.socketio = socketio
-        self._stop_event = eventlet.event.Event()
-        self._running_greenlet = None
+        self._stop_event = threading.Event()
+        self._running_thread = None
 
     def start(self):
-        self._running_greenlet = eventlet.spawn(self._run_loop)
+        self._running_thread = threading.Thread(target=self._run_loop, daemon=True)
+        self._running_thread.start()
 
     def stop(self):
-        if not self._stop_event.ready():
-            self._stop_event.send()
-        if self._running_greenlet:
-            self._running_greenlet.wait()
+        self._stop_event.set()
+        if self._running_thread:
+            self._running_thread.join()
 
     def _should_stop(self):
-        return self._stop_event.ready()
+        return self._stop_event.is_set()
 
     def _run_loop(self):
         while not self._should_stop():
@@ -70,14 +71,14 @@ class SessionRunner:
             except Exception as e:
                 app.logger.error(f"{self.sid}: Error emitting frame: {e}")
 
-            self.socketio.sleep(INPUT_TIMEOUT)
+            time.sleep(INPUT_TIMEOUT)
 
     def start_training(self, max_episodes=1):
-        if self._running_greenlet and not self._running_greenlet.dead:
+        if self._running_thread and self._running_thread.is_alive():
             app.logger.info(f"{self.sid}: Training is already running.")
             return
-        self._running_greenlet = eventlet.spawn(
-            self._run_training, max_episodes)
+        self._running_thread = threading.Thread(target=self._run_training, args=(max_episodes,), daemon=True)
+        self._running_thread.start()
 
     def _run_training(self, max_episodes: int = 1):
         for episode in range(max_episodes):
@@ -120,7 +121,7 @@ class SessionRunner:
                         app.logger.info(
                             f"{self.sid}: Training for episode {episode + 1} still in session...")
                     steps += 1
-                    eventlet.sleep(0)
+                    time.sleep(0)
                 except Exception as e:
                     app.logger.error(f"{self.sid}: Error in game loop: {e}")
 

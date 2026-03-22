@@ -3,57 +3,140 @@
 
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Agent Playground</title>
     <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"
         integrity="sha384-mkQ3/7FUtcGyoppY6bz/PORYoGqOl7/aSUMn2ymDOJcapfS6PHqxhRTMh1RR0Q6+"
         crossorigin="anonymous"></script>
     <style>
-        body {
-            background-image: url('{{ url_for("static", filename="images/background.png") }}');
-            background-size: 2450px 2050px;
-            background-position: -235px -640px;
-            background-repeat: no-repeat;
+        *, *::before, *::after {
+            box-sizing: border-box;
             margin: 0;
-            height: 100vh;
-            overflow: hidden;
-            font-family: Arial, sans-serif;
-            background-color: #f4f4f4;
-            position: relative;
+            padding: 0;
         }
 
-        #screen-container {
-            position: absolute;
-            top: 174px;
-            left: 681px;
-            width: 480px;
-            padding: 30px;
-            background: rgb(112 127 101);
-            border-radius: 20px;
-            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
-            z-index: 10;
+        body {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background-color: #1a2e0e;
+            background-image:
+                radial-gradient(ellipse 80% 40% at 50% 0%, #4a7c2f44 0%, transparent 70%),
+                radial-gradient(ellipse 60% 30% at 20% 100%, #2d5a1b55 0%, transparent 60%),
+                radial-gradient(ellipse 60% 30% at 80% 100%, #2d5a1b55 0%, transparent 60%),
+                radial-gradient(circle at 15% 25%, #ffffff08 0%, transparent 40%),
+                radial-gradient(circle at 85% 20%, #ffffff06 0%, transparent 35%),
+                repeating-linear-gradient(
+                    0deg,
+                    transparent,
+                    transparent 3px,
+                    #ffffff03 3px,
+                    #ffffff03 4px
+                ),
+                repeating-linear-gradient(
+                    90deg,
+                    transparent,
+                    transparent 40px,
+                    #2a4a1808 40px,
+                    #2a4a1808 41px
+                );
+            overflow: hidden;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background:
+                radial-gradient(circle at 10% 80%, #3d6b2288 0%, transparent 25%),
+                radial-gradient(circle at 90% 75%, #3d6b2288 0%, transparent 25%),
+                radial-gradient(circle at 50% 90%, #4a7c2f44 0%, transparent 35%),
+                radial-gradient(ellipse 100% 20% at 50% 100%, #2d5a1b 0%, transparent 100%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        body::after {
+            content: '🌿 🐄 🌾 🐑 🌿 🐔 🌻 🦆 🌿 🐇 🌾 🐖 🌿 🐄 🌾 🐑 🌿 🐔 🌻 🦆';
+            position: fixed;
+            bottom: 12px;
+            left: 0;
+            width: 200%;
+            font-size: 22px;
+            white-space: nowrap;
+            animation: scroll-farm 30s linear infinite;
+            pointer-events: none;
+            z-index: 0;
+            opacity: 0.35;
+            filter: grayscale(20%);
+        }
+
+        @keyframes scroll-farm {
+            from { transform: translateX(0); }
+            to   { transform: translateX(-50%); }
+        }
+
+        #game-wrapper {
+            position: relative;
+            z-index: 1;
+            width: min(480px, 100%);
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 15px;
+        }
+
+        #screen-container {
+            width: 100%;
+            padding: clamp(16px, 5vw, 30px);
+            background: rgb(112, 127, 101);
+            border-radius: 20px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 12px;
+            position: relative;
+        }
+
+        #logout-btn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            padding: 5px 10px;
+            font-size: 12px;
+            background: rgba(0, 0, 0, 0.2);
+            color: #eee;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 6px;
+            cursor: pointer;
+            text-decoration: none;
+            transition: background 0.2s ease;
+        }
+
+        #logout-btn:hover {
+            background: rgba(0, 0, 0, 0.4);
         }
 
         #screen-container h1 {
-            margin: 0 0 20px 0;
-            font-size: 30px;
+            font-size: clamp(22px, 5vw, 30px);
             color: #292102;
             text-align: center;
             text-shadow: 1px 1px 2px white;
+            margin-bottom: 4px;
         }
 
         label {
             font-weight: bold;
             color: #333;
-            align-self: flex-start;
+            font-size: 14px;
         }
 
         select,
         button {
-            padding: 10px;
+            padding: 10px 12px;
             width: 100%;
             border: 1px solid #ccc;
             border-radius: 8px;
@@ -61,10 +144,16 @@
         }
 
         button {
-            background-color: #4CAF50;
+            background-color: #4caf50;
             color: white;
             cursor: pointer;
-            transition: background-color 0.3s ease;
+            border: none;
+            transition: background-color 0.2s ease;
+            font-weight: bold;
+        }
+
+        button:hover:not(:disabled) {
+            background-color: #45a049;
         }
 
         button:disabled {
@@ -72,43 +161,122 @@
             cursor: not-allowed;
         }
 
-        img#video {
-            position: relative;
-            top: 142px;
-            left: 652px;
-            z-index: 1;
-            background-image: url('{{ url_for("static", filename="images/intro.png") }}');
-            background-size: cover;
-            background-position-y: -100px;
-            background-repeat: no-repeat;
-            background-color: #535252;
+        #player-config {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        #video {
+            display: none;
+            max-width: 100%;
             border-radius: 10px;
-            border-bottom-right-radius: 30px;
-            outline: none;
-            box-shadow: none;
-            overflow: hidden;
-            display: block;
-            background-clip: padding-box;
-            box-sizing: border-box;
-            transform: translateZ(0);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+            background-color: #535252;
+            background-size: cover;
+            background-repeat: no-repeat;
+            image-rendering: pixelated;
+        }
+
+        #controls {
+            display: none;
+            width: 100%;
+            margin-top: 12px;
+            padding: 14px 16px;
+            background: rgba(0, 0, 0, 0.55);
+            border-radius: 12px;
+            color: #e8e8e8;
+            font-size: 13px;
+            user-select: none;
+        }
+
+        #controls p {
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #c8e6a0;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .key-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 36px);
+            gap: 4px;
+            margin-bottom: 10px;
+        }
+
+        .key {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 32px;
+            background: rgba(255, 255, 255, 0.12);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 13px;
+            font-family: monospace;
+        }
+
+        .key.empty {
+            background: transparent;
+            border-color: transparent;
+        }
+
+        .controls-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: #ccc;
+            margin-top: 4px;
+        }
+
+        .controls-row .key {
+            width: 36px;
+            flex-shrink: 0;
         }
     </style>
 </head>
 
 <body>
+    <div id="game-wrapper">
+        <div id="screen-container">
+            <a id="logout-btn" href="/logout">Logout</a>
+            <h1 id="title">Agent Playground</h1>
 
-    <div id="screen-container">
-        <h1 id="title">Agent Playground</h1>
+            <label for="envSelect">Environment</label>
+            <select id="envSelect"></select>
 
-        <label for="envSelect">Environment:</label>
-        <select id="envSelect"></select>
+            <div id="player-config"></div>
 
-        <div id="player-config"></div>
+            <button id="startBtn" disabled>Start</button>
+        </div>
 
-        <button id="startBtn" disabled>Start</button>
+        <img id="video" width="{{ width }}" height="{{ height }}" />
+
+        <div id="controls">
+            <p>Controls</p>
+            <div style="display: flex; gap: 24px; flex-wrap: wrap;">
+                <div>
+                    <div class="key-grid">
+                        <div class="key">Q</div><div class="key">W</div><div class="key">E</div>
+                        <div class="key">A</div><div class="key">S</div><div class="key">D</div>
+                        <div class="key">Z</div><div class="key">X</div><div class="key">C</div>
+                    </div>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 5px; justify-content: center; font-size: 12px; color: #ccc;">
+                    <span><b style="color:#e8e8e8;">W / A / D / X</b> — move</span>
+                    <span><b style="color:#e8e8e8;">Q / E / Z / C</b> — diagonal</span>
+                    <span><b style="color:#e8e8e8;">S</b> — fire / action</span>
+                    <div class="controls-row">
+                        <div class="key">0</div><span>— idle (no-op)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
-
-    <img id="video" width="{{ width }}" height="{{ height }}" />
 
     <script src="{{ url_for('static', filename='js/agent-client.js') }}"></script>
 </body>

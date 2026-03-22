@@ -25,3 +25,7 @@ env/
 
 # TensorBoard
 runs/
+
+
+# VSCode
+.vscode
