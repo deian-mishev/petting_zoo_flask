@@ -6,11 +6,9 @@ A multi-agent reinforcement learning game platform built with Flask and Socket.I
 
 ## Technologies
 
-PETTING-ZOO-FLASK uses the following open source libraries:
-
 * [PYTHON3] - Programming language
 * [FLASK] - Lightweight Python web framework
-* [FLASK_SOCKETIO] - Real-time bi-directional communication for Flask apps
+* [FLASK_SOCKETIO] - Real-time bi-directional communication (threading async mode)
 * [TENSORFLOW] - Machine learning library
 * [KERAS] - High-level API for neural networks
 * [NUMPY] - Numerical computing library
@@ -22,7 +20,6 @@ PETTING-ZOO-FLASK uses the following open source libraries:
 * [PYMONGO] - MongoDB driver for experience replay persistence
 * [AUTHLIB] - OAuth2 / OpenID Connect client integration
 * [PYTHON_JOSE] - JWT token validation
-* [EVENTLET] - Coroutine-based async networking
 * [PYTHON_DOTENV] - Environment variable loading from `.env` files
 * [PYNGROK] - ngrok tunnel support for remote access
 
@@ -41,11 +38,10 @@ PETTING-ZOO-FLASK uses the following open source libraries:
 
 ## Player Types
 
-| Type          | Enum value      | Description                                                                 |
-|---------------|-----------------|-----------------------------------------------------------------------------|
-| `HUMAN`       | `human`         | Human player controlled via keyboard input over Socket.IO                   |
-| `COMPUTER`    | `ai_regular`    | Single-environment DQN agent with a dedicated model per game                |
-| `ATARI_PRO`   | `atari_ai_pro`  | Multi-head DQN agent sharing a common backbone across all environments (singleton — only one active at a time) |
+| Type        | Enum value     | Description                                                                                              |
+|-------------|----------------|----------------------------------------------------------------------------------------------------------|
+| `HUMAN`     | `human`        | Human player controlled via keyboard input over Socket.IO                                                |
+| `ATARI_PRO` | `atari_ai_pro` | Multi-head DQN agent sharing a common backbone across all environments (singleton — one active at a time) |
 
 ## ML Architecture
 
@@ -79,121 +75,99 @@ Update:  w_target = τ × w + (1 - τ) × w_target   (soft update)
 
 **Default hyperparameters:**
 
-| Parameter        | Value    | Description                          |
-|------------------|----------|--------------------------------------|
-| `GAMMA`          | `0.997`  | Discount factor                      |
-| `ALPHA`          | `1e-3`   | Adam learning rate                   |
-| `TAU`            | `1e-3`   | Soft update coefficient              |
-| `MINIBATCH_SIZE` | `128`    | Experience replay batch size         |
-| `MEMORY_SIZE`    | `10 000` | Max experiences per agent buffer     |
-| `EPSILON`        | `1.0`    | Initial exploration rate             |
-| `E_DECAY`        | `0.95`   | Epsilon decay multiplier per step    |
-| `E_MIN`          | `0.01`   | Minimum exploration floor            |
-| `REWARD_POS_FACTOR` | `5`   | Multiplier applied to positive rewards |
-| `REWARD_NEG_FACTO`  | `3`   | Multiplier applied to negative rewards |
-| `INACTIVITY_TO`  | `-1`     | Penalty for zero-reward steps        |
+| Parameter           | Value    | Description                            |
+|---------------------|----------|----------------------------------------|
+| `GAMMA`             | `0.997`  | Discount factor                        |
+| `ALPHA`             | `1e-3`   | Adam learning rate                     |
+| `TAU`               | `1e-3`   | Soft update coefficient                |
+| `MINIBATCH_SIZE`    | `128`    | Experience replay batch size           |
+| `MEMORY_SIZE`       | `10 000` | Max experiences per agent buffer       |
+| `EPSILON`           | `1.0`    | Initial exploration rate               |
+| `E_DECAY`           | `0.95`   | Epsilon decay multiplier per step      |
+| `E_MIN`             | `0.01`   | Minimum exploration floor              |
+| `REWARD_POS_FACTOR` | `5`      | Multiplier applied to positive rewards |
+| `REWARD_NEG_FACTO`  | `3`      | Multiplier applied to negative rewards |
+| `INACTIVITY_TO`     | `-1`     | Penalty for zero-reward steps          |
 
 ## Installation
 
-Install required Python packages using pip:
-
 ```sh
 pip install -r requirements.txt
-```
-
-Install Atari ROMs (required by PettingZoo Atari environments):
-
-```sh
 AutoROM --accept-license
 ```
 
 ## Environment Variables
 
-Copy `test_run/.env.example` to `.env` in the project root and fill in your values:
+Copy `.env.example` to `.env` in the project root and fill in your values:
 
 ```env
 # Flask
 FLASK_KEY=change-me-in-production
-FLASK_RUN_PORT=5000
+FLASK_RUN_PORT=5001
 
-# Rendering
-AGENT_VID_WIDTH=160
-AGENT_VID_HEIGHT=210
+# Video rendering
+AGENT_VID_WIDTH=480
+AGENT_VID_HEIGHT=630
 
 # MongoDB (Docker port mapped to localhost)
 MONGO_DB_URI=mongodb://localhost:27017/rl_db
 
-# OAuth2 / Keycloak (Docker port mapped to localhost)
+# Keycloak (Docker port mapped to localhost)
 OAUTH2_SERVER_URL=http://localhost:8080
 OAUTH2_REALM=petting-zoo
 OAUTH2_CLIENT_ID=petting-zoo-client
 OAUTH2_CLIENT_SECRET=dev-secret-change-in-prod
 
-# Model paths (Atari Pro multi-head model)
-ATTARI_PRO_MODEL=./resources/models/keras/atari_pro.keras
-ATTARI_PRO_WEIGHTS_PATH=./resources/models/keras/atari_pro.weights.h5
+# Atari Pro multi-head model (optional — leave blank to skip loading)
+ATTARI_PRO_MODEL=
+ATTARI_PRO_WEIGHTS_PATH=
 ```
 
 Per-environment models are saved automatically to `./resources/models/keras/` on training. The `resources/` directory is git-ignored.
 
-## Running and Building
+## Running
 
-* **WITH CLI COMMANDS**
+**With Docker Compose (recommended for local dev)**
 
-    Install dependencies and ROMs, then run:
+`local_test/docker-compose.yml` runs MongoDB and Keycloak in Docker with ports mapped to `localhost`. The Flask app runs directly on the host — this avoids OAuth2 redirect URL conflicts between the browser and the server.
 
-    ```sh
-    pip install -r requirements.txt
-    AutoROM --accept-license
-    python run.py
-    ```
+First-time setup:
 
-    The server starts on the port defined by `FLASK_RUN_PORT` (default `5000`).
-    MongoDB and Keycloak must be running and reachable at the URIs in `.env`.
+```sh
+cp .env.example .env
+# edit .env as needed
+cd local_test && docker compose up -d
+# wait for Keycloak to be healthy (~90s), then in the project root:
+python run.py
+```
 
-* **WITH DOCKER COMPOSE (recommended for local dev)**
+Subsequent runs:
 
-    `test_run/docker-compose.yml` runs MongoDB and Keycloak in Docker with ports mapped to `localhost`. The Flask app runs directly on the host — this avoids OAuth2 redirect URL conflicts between the browser and the server.
+```sh
+cd local_test && docker compose up -d && cd ..
+python run.py
+```
 
-    First-time setup:
+**Services:**
 
-    ```sh
-    cp test_run/.env.example .env
-    # edit .env as needed
-    cd test_run && docker compose up -d
-    # wait for Keycloak to be healthy (~60s), then in the project root:
-    pip install -r requirements.txt
-    AutoROM --accept-license
-    python run.py
-    ```
+| Service   | URL                        | Notes                           |
+|-----------|----------------------------|---------------------------------|
+| Flask app | http://localhost:5001      | Run locally via `python run.py` |
+| Keycloak  | http://localhost:8080      | Admin console: `admin / admin`  |
+| MongoDB   | mongodb://localhost:27017  | Database: `rl_db`               |
 
-    Subsequent runs:
+**Keycloak — pre-seeded configuration**
 
-    ```sh
-    cd test_run && docker compose up -d
-    python run.py
-    ```
+The realm import at `local_test/keycloak/realm-export.json` seeds the following on first boot:
 
-    **Services:**
-
-    | Service   | URL                        | Notes                              |
-    |-----------|----------------------------|------------------------------------|
-    | Flask app | http://localhost:5000      | Run locally via `python run.py`    |
-    | Keycloak  | http://localhost:8080      | Admin console: `admin / admin`     |
-    | MongoDB   | mongodb://localhost:27017  | Database: `rl_db`                  |
-
-* **Keycloak — pre-seeded configuration**
-
-    The realm import at `test_run/keycloak/realm-export.json` seeds the following on first boot:
-
-    | Item            | Value                        |
-    |-----------------|------------------------------|
-    | Realm           | `petting-zoo`                |
-    | Client ID       | `petting-zoo-client`         |
-    | Client secret   | `dev-secret-change-in-prod`  |
-    | Redirect URI    | `http://localhost:5000/*`    |
-    | Roles           | `User`, `Admin`              |
-    | Demo users      | `admin / admin123` (User + Admin), `player / player123` (User) |
+| Item          | Value                        |
+|---------------|------------------------------|
+| Realm         | `petting-zoo`                |
+| Client ID     | `petting-zoo-client`         |
+| Client secret | `dev-secret-change-in-prod`  |
+| Redirect URI  | `http://localhost:5001/*`    |
+| Roles         | `User`, `Admin`              |
+| Demo users    | `admin / admin123` (User + Admin), `player / player123` (User) |
 
 ## API Reference
 
@@ -204,31 +178,31 @@ Per-environment models are saved automatically to `./resources/models/keras/` on
 | `connect`    | client → server | `login_required`, role `User` | Opens a game session; payload selects environment and opponents |
 | `input`      | client → server | session                       | Sends keyboard key(s) for the human player's current turn       |
 | `disconnect` | client → server | session                       | Tears down the session, saves model, persists experiences       |
-| `frame`      | server → client | —                             | Emits a base64-encoded PNG of the current game frame            |
+| `frame`      | server → client | —                             | Emits a binary JPEG of the current game frame                   |
 
 ### HTTP Endpoints
 
-| Route          | Method | Auth                          | Description                                          |
-|----------------|--------|-------------------------------|------------------------------------------------------|
-| `/`            | GET    | `login_required`              | Serves the main SPA (`index.html`)                   |
-| `/preconnect`  | GET    | `login_required`, role `User` | Returns available environments and opponent options  |
-| `/login`       | GET    | —                             | Initiates OAuth2 login redirect                      |
-| `/auth`        | GET    | —                             | OAuth2 callback; exchanges code for tokens           |
-| `/logout`      | GET    | session                       | Clears session and redirects to Keycloak logout      |
+| Route         | Method | Auth                          | Description                                         |
+|---------------|--------|-------------------------------|-----------------------------------------------------|
+| `/`           | GET    | `login_required`              | Serves the main SPA (`index.html`)                  |
+| `/preconnect` | GET    | `login_required`, role `User` | Returns available environments and opponent options |
+| `/login`      | GET    | —                             | Initiates OAuth2 login redirect                     |
+| `/auth`       | GET    | —                             | OAuth2 callback; exchanges code for tokens          |
+| `/logout`     | GET    | session                       | Clears session and redirects to Keycloak logout     |
 
 ### Admin Endpoints (Bearer token required, role `Admin`)
 
-| Route            | Method | Description                                              |
-|------------------|--------|----------------------------------------------------------|
-| `/train`         | POST   | Starts an autonomous training session (no human player)  |
-| `/stop_training` | POST   | Stops the running training session                       |
+| Route            | Method | Description                                             |
+|------------------|--------|---------------------------------------------------------|
+| `/train`         | POST   | Starts an autonomous training session (no human player) |
+| `/stop_training` | POST   | Stops the running training session                      |
 
 **`POST /train` payload:**
 ```json
 {
-  "env": "boxing_v2",
-  "players": ["atari_ai_pro", "ai_regular"],
-  "max_episodes": 500
+  "env": "Boxing",
+  "players": {"first_0": "atari_ai_pro", "second_0": "atari_ai_pro"},
+  "episodes": 5
 }
 ```
 
@@ -236,19 +210,17 @@ Per-environment models are saved automatically to `./resources/models/keras/` on
 
 ```
 petting_zoo_flask/
-├── run.py                        # Entry point — registers blueprints, starts server
-├── Dockerfile
+├── run.py                        # Entry point — starts server
 ├── requirements.txt
-├── .env                          # git-ignored — copy from test_run/.env.example
+├── .env.example                  # Copy to .env and fill in values
+├── .env                          # git-ignored
 ├── .gitignore
-├── wsl-dev-deps.sh               # WSL dependency helper script
-├── resources/                    # git-ignored — trained models saved here
-│   └── models/keras/
-├── test_run/                     # Docker Compose dev environment
+├── local_test/                   # Docker Compose dev environment
 │   ├── docker-compose.yml
-│   ├── .env.example
 │   └── keycloak/
 │       └── realm-export.json     # Pre-seeded realm, client, roles, and users
+├── resources/                    # git-ignored — trained models saved here
+│   └── models/keras/
 └── app/
     ├── __init__.py               # Flask app, SocketIO, and global session store
     ├── config/
@@ -264,14 +236,13 @@ petting_zoo_flask/
     │   └── admin.py              # Admin training endpoints
     ├── services/
     │   ├── ml_service.py         # DQN model build, train, inference (singleton)
-    │   ├── session_runner.py     # Eventlet game loop and training loop
+    │   ├── session_runner.py     # Threading game loop and training loop
     │   ├── session.py            # Session lifecycle and agent population
     │   ├── experience_store.py   # MongoDB experience replay CRUD (singleton)
-    │   └── rendering_service.py  # Frame → base64 PNG
+    │   └── rendering_service.py  # Frame → binary JPEG
     ├── validation/
     │   └── __init__.py           # Request validation helpers
     ├── static/
-    │   ├── images/
     │   └── js/
     │       └── agent-client.js   # Socket.IO game client
     └── templates/
@@ -280,21 +251,21 @@ petting_zoo_flask/
 
 ## Concurrency Model
 
-The server runs on **eventlet** greenlets (cooperative multitasking):
+The server runs Flask-SocketIO in **threading** mode:
 
-- Each active game session runs in its own greenlet spawned by `SessionRunner`.
-- `eventlet.semaphore.Semaphore` guards the global session map, each session, and each model.
+- Each active game session runs in its own `threading.Thread` spawned by `SessionRunner`.
+- `threading.Lock` guards the global session map, each session, and each model.
 - The ATARI_PRO model is a singleton protected by a global `ATTARI_PRO_LOCK`; only one session may use it at a time.
-- Frame delivery targets ~143 FPS (`INPUT_TIMEOUT = 0.007 s`) using `socketio.sleep()` for cooperative yielding.
+- Frame delivery targets ~143 FPS (`INPUT_TIMEOUT = 0.007 s`).
 
 ## Logging
 
-| Environment | Output                                      |
-|-------------|---------------------------------------------|
-| `DEV`       | stdout                                      |
-| Production  | Rotating file (5 MB per file, 5 backups)    |
+| Environment | Output                                   |
+|-------------|------------------------------------------|
+| `DEV`       | stdout                                   |
+| Production  | Rotating file (5 MB per file, 5 backups) |
 
-Set the `LOG_LEVEL` and `ENV` variables in `.env` to control behaviour.
+Set `LOG_LEVEL` and `ENV` in `.env` to control behaviour.
 
 [PYTHON3]: https://www.python.org/downloads/release/python-3/
 [FLASK]: https://flask.palletsprojects.com/
@@ -310,6 +281,5 @@ Set the `LOG_LEVEL` and `ENV` variables in `.env` to control behaviour.
 [PYMONGO]: https://pymongo.readthedocs.io/
 [AUTHLIB]: https://authlib.org/
 [PYTHON_JOSE]: https://python-jose.readthedocs.io/
-[EVENTLET]: https://eventlet.net/
 [PYTHON_DOTENV]: https://pypi.org/project/python-dotenv/
 [PYNGROK]: https://pyngrok.readthedocs.io/
