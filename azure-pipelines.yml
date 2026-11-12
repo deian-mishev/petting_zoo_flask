@@ -28,7 +28,6 @@ steps:
         pettingzoo1643228121.azurecr.io/petting-zoo-web:$(Build.BuildId)
       docker push pettingzoo1643228121.azurecr.io/petting-zoo-web:$(Build.BuildId)
     displayName: Push tested image to registry
-
   - task: AzureCLI@2
     displayName: Check access to web app
     inputs:
