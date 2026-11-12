@@ -9,3 +9,10 @@ steps:
   - script: |
       docker build -t petting-zoo-web:$(Build.BuildId) .
     displayName: Build Flask image
+
+  - script: |
+      docker run --rm \
+        --mount "type=bind,source=$(Build.SourcesDirectory)/tests,target=/app/tests,readonly" \
+        petting-zoo-web:$(Build.BuildId) \
+        python -m unittest discover -s tests -p 'test_*.py' -v
+    displayName: Run unit tests
