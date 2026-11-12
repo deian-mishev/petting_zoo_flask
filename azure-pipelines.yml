@@ -6,9 +6,6 @@ pool:
 
 steps:
   - checkout: self
-
   - script: |
-      echo "Repository connected successfully"
-      test -f Dockerfile
-      docker --version
-    displayName: Check repository and Docker
+      docker build -t petting-zoo-web:$(Build.BuildId) .
+    displayName: Build Flask image
