@@ -1,13 +1,14 @@
 from pymongo import ASCENDING
-from app.config.persistance_config import experiences_collection
+from app.config.persistance_config import get_experiences_collection
 from app.config.player_state import Experience
 from datetime import datetime, timezone
 from app import app
 
 
 class ExperienceService:
-    def __init__(self):
-        self.collection = experiences_collection
+    @property
+    def collection(self):
+        return get_experiences_collection()
 
     def insert_experience_batch(self, env_name: str, experiences: list[Experience], sid):
         if not experiences:

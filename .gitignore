@@ -1,5 +1,8 @@
 # Environment
 .env
+.env.*
+!.env.example
+deploy
 
 # Saved models and weights
 resources/

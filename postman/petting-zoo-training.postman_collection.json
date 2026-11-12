@@ -1,0 +1,202 @@
+{
+  "info": {
+    "name": "Petting Zoo - Model Training",
+    "description": "Send requests individually, not with Run Collection (which would start and immediately stop training). Set client_secret and admin_password locally in Postman; never share or commit an export containing credentials or access_token. Use the deployed Keycloak client secret and application admin, not kcadmin. Keycloak must permit Direct Access Grants and include petting-zoo-client in the access-token audience. Before training, disconnect games, back up model files, and set Flask's minimum replicas to 1. Restore it to 0 after completion or stopping to limit costs. Background training is not a durable Azure job.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "app_url",
+      "value": "https://petting-zoo-web.whitemoss-476c1b28.northeurope.azurecontainerapps.io",
+      "type": "string"
+    },
+    {
+      "key": "keycloak_url",
+      "value": "https://petting-zoo-auth.whitemoss-476c1b28.northeurope.azurecontainerapps.io",
+      "type": "string"
+    },
+    {
+      "key": "realm",
+      "value": "petting-zoo",
+      "type": "string"
+    },
+    {
+      "key": "client_id",
+      "value": "petting-zoo-client",
+      "type": "string"
+    },
+    {
+      "key": "client_secret",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "admin_username",
+      "value": "admin",
+      "type": "string"
+    },
+    {
+      "key": "admin_password",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1 - Get admin token",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.collectionVariables.set('access_token', '');",
+              "const required = ['client_secret', 'admin_username', 'admin_password'];",
+              "const missing = required.filter(name => !pm.variables.get(name));",
+              "if (missing.length) {",
+              "    pm.execution.skipRequest();",
+              "    throw new Error('Set local Postman variables: ' + missing.join(', '));",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code !== 200) {",
+              "    throw new Error('Token request failed: HTTP ' + pm.response.code + '. Inspect the response privately.');",
+              "}",
+              "const token = pm.response.json().access_token;",
+              "if (typeof token !== 'string' || !token.trim()) {",
+              "    throw new Error('Token response did not contain an access_token.');",
+              "}",
+              "pm.collectionVariables.set('access_token', token);",
+              "pm.test('Admin access token stored for training requests', function () {",
+              "    pm.expect(pm.collectionVariables.get('access_token')).to.eql(token);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "grant_type",
+              "value": "password",
+              "type": "text"
+            },
+            {
+              "key": "client_id",
+              "value": "{{client_id}}",
+              "type": "text"
+            },
+            {
+              "key": "client_secret",
+              "value": "{{client_secret}}",
+              "type": "text"
+            },
+            {
+              "key": "username",
+              "value": "{{admin_username}}",
+              "type": "text"
+            },
+            {
+              "key": "password",
+              "value": "{{admin_password}}",
+              "type": "text"
+            },
+            {
+              "key": "scope",
+              "value": "openid profile email",
+              "type": "text"
+            }
+          ]
+        },
+        "url": "{{keycloak_url}}/realms/{{realm}}/protocol/openid-connect/token",
+        "description": "Uses the confidential client's enabled Direct Access Grant for this controlled demo. A successful response saves access_token automatically; starting another token request clears the old token first. Tokens expire: obtain a fresh one if training calls return 401. Keep the same admin identity when stopping its training session."
+      }
+    },
+    {
+      "name": "Training - send individually",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const token = pm.collectionVariables.get('access_token');",
+              "if (!token) {",
+              "    pm.execution.skipRequest();",
+              "    throw new Error('Run Get admin token successfully before sending this request.');",
+              "}",
+              "pm.variables.set('access_token', token);"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "2 - Start Boxing training (1 episode)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"env\": \"Boxing\",\n  \"players\": {\n    \"first_0\": \"ai_regular\",\n    \"second_0\": \"atari_ai_pro\"\n  },\n  \"episodes\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{app_url}}/train",
+            "description": "Requires Admin role, client audience and email claim. Trains regular AI against Atari Pro and saves both models after completed episodes. Edit the JSON body to choose another supported environment or a positive episode count. HTTP 200 with Training started only confirms launch, not completion. Monitor Azure logs for completion and errors; do not retry an uncertain start blindly."
+          }
+        },
+        {
+          "name": "3 - Stop my training",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{app_url}}/stop_training",
+            "description": "Stops the training session belonging to this token's user. Use the same admin identity that started it. A 404 means no training session was found for that user in the current process. Stopping mid-episode does not save unfinished episode progress. This request is optional: finite training ends automatically."
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -20,10 +20,12 @@ OAUTH2_LOGOUT_URL = f"{OAUTH2_SERVER_URL}/realms/{OAUTH2_REALM}/protocol/openid-
 OAUTH2_JWKS_URL = f"{OAUTH2_SERVER_URL}/realms/{OAUTH2_REALM}/protocol/openid-connect/certs"
 _jwks_keys = None
 
-def _get_jwks_keys():
+def _get_jwks_keys(force_refresh=False):
     global _jwks_keys
-    if _jwks_keys is None:
-        _jwks_keys = requests.get(OAUTH2_JWKS_URL, timeout=5).json()['keys']
+    if _jwks_keys is None or force_refresh:
+        response = requests.get(OAUTH2_JWKS_URL, timeout=5)
+        response.raise_for_status()
+        _jwks_keys = response.json()['keys']
     return _jwks_keys
 
 app = app.app
@@ -46,7 +48,10 @@ def get_key(token):
     for key in _get_jwks_keys():
         if key['kid'] == kid:
             return key
-    raise Exception("Public key not found")
+    for key in _get_jwks_keys(force_refresh=True):
+        if key['kid'] == kid:
+            return key
+    raise ValueError("Public key not found after refreshing Keycloak signing keys")
 
 def extract_roles(decoded):
     roles = []
@@ -82,6 +87,7 @@ def token_required_api(roles=None):
                 request.user = decoded
                 request.user_roles = user_roles
             except Exception:
+                app.logger.warning("Bearer token validation failed.")
                 return jsonify({"error": f"Invalid token"}), 401
 
             return f(*args, **kwargs)
@@ -124,7 +130,7 @@ def auth():
             decoded = jwt.decode(access_token, key, algorithms=["RS256"], audience=OAUTH2_CLIENT_ID)
             roles = extract_roles(decoded)
         except Exception:
-            pass
+            app.logger.warning("Access token role validation failed during login.")
 
     session['id_token'] = token.get('id_token')
     session['user'] = userinfo

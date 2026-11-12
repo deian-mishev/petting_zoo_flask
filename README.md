@@ -110,6 +110,7 @@ AGENT_VID_WIDTH=480
 AGENT_VID_HEIGHT=630
 
 # MongoDB (Docker port mapped to localhost)
+MONGO_ENABLED=false
 MONGO_DB_URI=mongodb://localhost:27017/rl_db
 
 # Keycloak (Docker port mapped to localhost)
