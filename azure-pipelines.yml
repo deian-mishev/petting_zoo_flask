@@ -16,3 +16,15 @@ steps:
         petting-zoo-web:$(Build.BuildId) \
         python -m unittest discover -s tests -p 'test_*.py' -v
     displayName: Run unit tests
+
+  - task: Docker@2
+    displayName: Log in to Azure Container Registry
+    inputs:
+      command: login
+      containerRegistry: petting-zoo-acr
+
+  - script: |
+      docker tag petting-zoo-web:$(Build.BuildId) \
+        pettingzoo1643228121.azurecr.io/petting-zoo-web:$(Build.BuildId)
+      docker push pettingzoo1643228121.azurecr.io/petting-zoo-web:$(Build.BuildId)
+    displayName: Push tested image to registry
