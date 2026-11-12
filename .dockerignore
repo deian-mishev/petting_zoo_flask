@@ -16,6 +16,8 @@ local_test/
 DS_Store
 postman/
 deploy/
+keycloak/
 .aws/
 .codex/
 .agents/
+tests/
