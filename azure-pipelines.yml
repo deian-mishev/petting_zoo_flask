@@ -1,0 +1,14 @@
+trigger: none
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - checkout: self
+
+  - script: |
+      echo "Repository connected successfully"
+      test -f Dockerfile
+      docker --version
+    displayName: Check repository and Docker
