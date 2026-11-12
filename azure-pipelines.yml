@@ -40,3 +40,16 @@ steps:
           --resource-group rg-petting-zoo-dev \
           --query "{name:name,image:properties.template.containers[0].image}" \
           --output table
+  - task: AzureCLI@2
+    displayName: Deploy Flask image
+    inputs:
+      azureSubscription: petting-zoo-deploy
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        az containerapp update \
+          --name petting-zoo-web \
+          --resource-group rg-petting-zoo-dev \
+          --container-name petting-zoo-web \
+          --image "pettingzoo1643228121.azurecr.io/petting-zoo-web:$(Build.BuildId)" \
+          --output none
