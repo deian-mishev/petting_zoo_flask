@@ -237,6 +237,54 @@
             width: 36px;
             flex-shrink: 0;
         }
+
+        .keyboard-controls {
+            display: flex;
+            gap: 24px;
+            flex-wrap: wrap;
+        }
+
+        #touch-controls {
+            display: none;
+            align-items: center;
+            justify-content: space-around;
+            gap: 16px;
+        }
+
+        #joystick-zone {
+            position: relative;
+            width: 150px;
+            height: 150px;
+            flex-shrink: 0;
+            touch-action: none;
+        }
+
+        #action-button {
+            width: 88px;
+            height: 88px;
+            border-radius: 50%;
+            touch-action: none;
+            user-select: none;
+        }
+
+        #action-button:active {
+            background-color: #3c8b40;
+        }
+
+        @media (any-pointer: coarse) {
+            body {
+                align-items: flex-start;
+                overflow-y: auto;
+            }
+
+            .keyboard-controls {
+                display: none;
+            }
+
+            #touch-controls {
+                display: flex;
+            }
+        }
     </style>
 </head>
 
@@ -258,7 +306,7 @@
 
         <div id="controls">
             <p>Controls</p>
-            <div style="display: flex; gap: 24px; flex-wrap: wrap;">
+            <div class="keyboard-controls">
                 <div>
                     <div class="key-grid">
                         <div class="key">↖</div><div class="key">↑</div><div class="key">↗</div>
@@ -275,9 +323,16 @@
                     </div>
                 </div>
             </div>
+            <div id="touch-controls">
+                <div id="joystick-zone" aria-label="Movement joystick"></div>
+                <button id="action-button" type="button">Action</button>
+            </div>
         </div>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/1.0.4/index.min.js"
+        integrity="sha512-K3kC6EB1pGzXBqE3mhzMfHKCfcaZbR6k31U79LkLuMQCAT6/64m1IJzjAQWE2uXKEQXAnybvIF47rjpxKh8d4w=="
+        crossorigin="anonymous"></script>
     <script src="{{ url_for('static', filename='js/agent-client.js') }}"></script>
 </body>
 

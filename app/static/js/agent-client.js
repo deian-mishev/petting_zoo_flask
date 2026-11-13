@@ -6,12 +6,17 @@ const playerConfigDiv = document.getElementById("player-config");
 const startBtn = document.getElementById('startBtn');
 const screen_container = document.getElementById('screen-container');
 const controls = document.getElementById('controls');
+const joystickZone = document.getElementById('joystick-zone');
+const actionButton = document.getElementById('action-button');
 
 let isConnected = false;
 let socket = null;
 let animationFrameId = null;
 let lastSentKeys = '';
 let lastSendTime = 0;
+let joystick = null;
+let joystickDirection = null;
+let actionPointerId = null;
 const SEND_INTERVAL_MS = 50;
 
 let environments = [];
@@ -29,6 +34,72 @@ function handleKeyup(e) {
     if (removed) lastSendTime = 0;
 }
 
+function setJoystickDirection(direction) {
+    if (joystickDirection !== direction) {
+        joystickDirection = direction;
+        lastSendTime = 0;
+    }
+}
+
+function startJoystick() {
+    if (!window.nipplejs) {
+        joystickZone.textContent = 'Joystick unavailable';
+        return;
+    }
+
+    joystick = nipplejs.create({
+        zone: joystickZone,
+        mode: 'static',
+        position: { left: '50%', top: '50%' },
+        color: '#c8e6a0',
+        size: 130,
+    });
+
+    joystick.on('move', (event) => {
+        const data = event.data;
+        if (data.distance < 12) {
+            setJoystickDirection(null);
+            return;
+        }
+        const directions = ['6', '9', '8', '7', '4', '1', '2', '3'];
+        const angle = Math.atan2(data.vector.y, data.vector.x);
+        const sector = (Math.round(angle / (Math.PI / 4)) + 8) % 8;
+        setJoystickDirection(directions[sector]);
+    });
+    joystick.on('end', () => setJoystickDirection(null));
+}
+
+actionButton.addEventListener('pointerdown', (event) => {
+    if (!isConnected || actionPointerId !== null) return;
+    event.preventDefault();
+    actionPointerId = event.pointerId;
+    actionButton.setPointerCapture(event.pointerId);
+    lastSendTime = 0;
+});
+
+function releaseAction(event) {
+    if (event.pointerId === actionPointerId) {
+        actionPointerId = null;
+        lastSendTime = 0;
+    }
+}
+
+actionButton.addEventListener('pointerup', releaseAction);
+actionButton.addEventListener('pointercancel', releaseAction);
+actionButton.addEventListener('lostpointercapture', releaseAction);
+
+function clearInputs() {
+    pressedKeys.clear();
+    joystickDirection = null;
+    actionPointerId = null;
+    lastSendTime = 0;
+}
+
+window.addEventListener('blur', clearInputs);
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) clearInputs();
+});
+
 function checkEnableStart() {
     const selects = playerConfigDiv.querySelectorAll("select");
     let humanCount = 0;
@@ -40,8 +111,12 @@ function checkEnableStart() {
 
 function gameLoop(timestamp) {
     if (timestamp - lastSendTime >= SEND_INTERVAL_MS) {
-        if (pressedKeys.size > 0) {
-            const keysArray = Array.from(pressedKeys);
+        const keysArray = [...new Set([
+            ...(actionPointerId !== null ? ['s'] : []),
+            ...(joystickDirection ? [joystickDirection] : []),
+            ...pressedKeys,
+        ])];
+        if (keysArray.length > 0) {
             const keyState = keysArray.join(',');
 
             if (keyState !== lastSentKeys) {
@@ -66,6 +141,12 @@ function cleanup() {
     document.removeEventListener("keydown", handleKeydown);
     document.removeEventListener("keyup", handleKeyup);
     cancelAnimationFrame(animationFrameId);
+    if (joystick) {
+        joystick.destroy();
+        joystick = null;
+    }
+    clearInputs();
+    lastSentKeys = '';
 
     if (socket?.connected) {
         socket.disconnect();
@@ -160,6 +241,7 @@ startBtn.addEventListener("click", () => {
             vid.style.display = 'block';
             controls.style.display = 'block';
             isConnected = true;
+            startJoystick();
             checkEnableStart();
 
             document.addEventListener("keydown", handleKeydown);
