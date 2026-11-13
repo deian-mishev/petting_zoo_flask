@@ -206,7 +206,7 @@ class BlobCheckpointStore:
             data, etag = self.blobs.read(f"{prefix}/manifest.json")
         except CheckpointNotFound as error:
             raise CheckpointNotFound(
-                "Blob checkpoint manifest is missing; explicit offline migration or initialization is required"
+                "Blob checkpoint manifest is missing"
             ) from error
         try:
             return _check_manifest(json.loads(data)), etag
@@ -248,7 +248,19 @@ class BlobCheckpointStore:
         prefix = _prefix(model_path)
         with tempfile.TemporaryDirectory(prefix="model-load-") as directory:
             for attempt in range(5):
-                manifest, _ = self._manifest(prefix)
+                try:
+                    manifest, _ = self._manifest(prefix)
+                except CheckpointNotFound:
+                    # Create-only publication lets concurrent first readers share
+                    # one generation without replacing an existing checkpoint.
+                    try:
+                        self._write(prefix, {
+                            "schema": 1, "generation": uuid4().hex,
+                            "high_water": 0, "history": [], "cleanup": [],
+                        })
+                    except CheckpointConflict:
+                        pass
+                    manifest, _ = self._manifest(prefix)
                 if not manifest["history"]:
                     yield None, manifest["generation"]
                     return

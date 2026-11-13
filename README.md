@@ -140,6 +140,15 @@ checkpoint files. Missing Blob configuration never silently falls back to the
 mounted file share. The earlier SQLite errors demonstrate a locking failure,
 not that the existing Azure Files share or model files are corrupt.
 
+On first load, a missing Blob manifest is created automatically with empty
+history. The server then builds a fresh model in memory and publishes `v1` on
+its first successful save. Existing files on `model-data` are ignored, even if
+they exist; they are not overwritten by the Blob backend. Concurrent first
+loads use one shared manifest generation. Existing Blob checkpoints still load
+normally; invalid manifests, missing archives, and storage failures remain errors.
+To preserve trained models from the file share, explicitly bootstrap them before
+their first load; otherwise those models start fresh.
+
 The opt-in `azure_blob` backend stores each model and target-weights pair in an
 immutable, checksummed Blob. A conditional manifest update publishes one pair
 at a time, with sequential version numbers. The current version and up to
@@ -204,11 +213,11 @@ an intentionally new model only, use `bootstrap <model-path> <weights-path>
 manifests cannot be overwritten by bootstrap. Repeat for all configured model
 paths, including the Atari Pro path if configured, run `status-all` to check
 that every configured model has a valid manifest, then
-switch the app to `azure_blob`. A missing Blob manifest or unavailable storage
-prevents that game from starting; there is no fallback to SQLite or new models.
+switch the app to `azure_blob`. A missing Blob manifest starts a fresh model automatically. Unavailable storage
+prevents that game from starting; there is no fallback to SQLite or local models.
 Keep old writers stopped after cutover, including during deployment rollouts.
 
-#### Deployment order
+#### Deployment order when preserving existing trained models
 
 1. Build and push the new image without deploying: run the Azure pipeline with
    `deployApp=false`. This does not switch the running app's storage backend.
@@ -231,7 +240,7 @@ The pipeline's deployment step refuses to update an app not yet configured for
 `azure_blob`; the initial image/backend cutover is a deliberate maintenance
 operation. After cutover, normal pipeline deployment can resume. No live Azure
 integration test is performed by the local unit tests. An incorrect identity,
-firewall, endpoint, or missing manifest will still prevent game startup, with a
+firewall, endpoint, or corrupt checkpoint will still prevent game startup, with a
 recoverable client error; fix configuration rather than falling back to old models.
 
 To roll back, use `status <model-path>` to list retained versions, then run

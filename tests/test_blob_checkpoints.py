@@ -259,9 +259,41 @@ class BlobCheckpointTests(unittest.TestCase):
         self.assertEqual(self.load()[0], (b"first", b"first"))
         self.assertEqual(len([name for name in self.blobs.blobs if "/objects/" in name]), 1)
 
-    def test_missing_bad_and_corrupted_data_fail_closed(self):
-        with self.assertRaises(NotFound):
-            self.load()
+    def test_missing_manifest_initializes_fresh_model_ignoring_local_files(self):
+        Path(self.model).write_bytes(b"old model")
+        Path(self.weights).write_bytes(b"old weights")
+        files, generation = self.load()
+        self.assertIsNone(files)
+        self.assertEqual(generation, self.manifest()["generation"])
+        self.assertEqual(self.manifest()["history"], [])
+        self.assertEqual(Path(self.model).read_bytes(), b"old model")
+        self.assertEqual(self.save(b"fresh", generation), "v1")
+        self.assertEqual(self.load()[0], (b"fresh", b"fresh"))
+
+    def test_concurrent_initialization_uses_winning_manifest(self):
+        original_create = self.blobs.create
+        barrier = threading.Barrier(2)
+
+        def create_together(name, data):
+            barrier.wait(timeout=10)
+            original_create(name, data)
+
+        with patch.object(self.blobs, "create", side_effect=create_together):
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(lambda _: self.load(), range(2)))
+        self.assertEqual(results, [(None, self.manifest()["generation"])] * 2)
+        self.assertEqual(len(self.blobs.blobs), 1)
+
+    def test_initialization_storage_failures_propagate(self):
+        with patch.object(self.blobs, "create", side_effect=PermissionError("denied")):
+            with self.assertRaises(PermissionError):
+                self.load()
+        with patch.object(self.blobs, "read", side_effect=OSError("unavailable")):
+            with self.assertRaises(OSError):
+                self.load()
+        self.assertFalse(self.blobs.blobs)
+
+    def test_bad_and_corrupted_data_fail_closed(self):
         self.bootstrap()
         name = f"{self.prefix}/manifest.json"
         data, tag = self.blobs.read(name)
