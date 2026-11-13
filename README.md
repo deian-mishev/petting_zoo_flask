@@ -4,6 +4,26 @@
 
 A multi-agent reinforcement learning game platform built with Flask and Socket.IO. Human players can compete against AI agents in classic Atari games in real time, while administrators can trigger autonomous training sessions. AI agents learn via Deep Q-Networks (DQN) with experience replay. A multi-head "Atari Pro" model generalises across all supported environments using a shared convolutional backbone and per-environment output heads. Authentication is handled through OAuth2/OpenID Connect (Keycloak) with role-based access control.
 
+[Play Atari Petting Zoo](https://www.ataripettingzoo.com/)
+
+## Link previews
+
+The homepage serves a public welcome page to visitors who are not signed in, so
+sharing services can read its Open Graph and large-image Twitter Card metadata
+without being redirected to Keycloak. Signed-in users see the game as usual;
+game connections and APIs still require authentication.
+
+Preview title, description, canonical URL, and image URL are defined in
+`app/templates/social_meta.html`, shared by the welcome and game pages. The
+1200 × 630 PNG is `app/static/images/social-preview.png`; regenerate it with
+`python scripts/generate_social_preview.py`. If the public domain changes,
+update the URLs in the metadata template too.
+
+After deployment, share `https://www.ataripettingzoo.com/`. Services may cache old
+previews; request a fresh scrape through their preview/debugging tools when
+available. The public homepage and preview image must both return HTTP 200
+without login for previews to work.
+
 ## Technologies
 
 * [PYTHON3] - Programming language

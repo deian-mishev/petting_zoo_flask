@@ -105,6 +105,12 @@ def on_disconnect():
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
-@login_required
 def index(path):
+    if not path and 'user' not in session:
+        return render_template("welcome.html")
+    return game_page()
+
+
+@login_required
+def game_page():
     return render_template("index.html", width=AGENT_VID_WIDTH, height=AGENT_VID_HEIGHT)

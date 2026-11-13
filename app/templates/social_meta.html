@@ -1,0 +1,22 @@
+{% set share_title = 'Atari Petting Zoo | Play Against AI' %}
+{% set share_description = 'Classic Atari games. Learning AI opponents. Play against an agent or watch AI take on AI in your browser.' %}
+{% set share_url = 'https://www.ataripettingzoo.com/' %}
+{% set share_image = 'https://www.ataripettingzoo.com' ~ url_for('static', filename='images/social-preview.png') %}
+<title>{{ share_title }}</title>
+<meta name="description" content="{{ share_description }}">
+<link rel="canonical" href="{{ share_url }}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Atari Petting Zoo">
+<meta property="og:title" content="{{ share_title }}">
+<meta property="og:description" content="{{ share_description }}">
+<meta property="og:url" content="{{ share_url }}">
+<meta property="og:image" content="{{ share_image }}">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Atari Petting Zoo: play against AI, with a green pixel-art arcade screen.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ share_title }}">
+<meta name="twitter:description" content="{{ share_description }}">
+<meta name="twitter:image" content="{{ share_image }}">
+<meta name="twitter:image:alt" content="Atari Petting Zoo: play against AI, with a green pixel-art arcade screen.">

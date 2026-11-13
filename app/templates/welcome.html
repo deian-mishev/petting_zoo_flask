@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {% include 'social_meta.html' %}
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0; min-height: 100vh; display: grid; place-items: center;
+            padding: 24px; background: #10251b; color: #eaf3d8;
+            font-family: Arial, sans-serif;
+        }
+        main { width: min(760px, 100%); }
+        img { display: block; width: 100%; height: auto; border-radius: 16px; }
+        h1 { font-size: clamp(28px, 6vw, 44px); margin-bottom: 12px; }
+        p { color: #c4d5bb; font-size: 18px; line-height: 1.6; }
+        a {
+            display: inline-block; margin-top: 12px; padding: 14px 24px;
+            background: #c8e6a0; color: #10251b; border-radius: 8px;
+            text-decoration: none; font-weight: bold;
+        }
+        a:hover { background: #eaf3d8; }
+        a:focus-visible { outline: 3px solid white; outline-offset: 5px; }
+    </style>
+</head>
+<body>
+    <main>
+        <img src="{{ url_for('static', filename='images/social-preview.png') }}"
+            width="1200" height="630" alt="Atari Petting Zoo pixel-art arcade">
+        <h1>Classic games. Learning opponents.</h1>
+        <p>Play classic Atari games against AI, or watch agents compete.
+            Sign in to enter the playground.</p>
+        <a href="{{ url_for('login') }}">Sign in to play</a>
+    </main>
+</body>
+</html>
