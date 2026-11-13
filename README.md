@@ -124,6 +124,12 @@ ATTARI_PRO_MODEL=
 ATTARI_PRO_WEIGHTS_PATH=
 ```
 
+`AGENT_VID_WIDTH` and `AGENT_VID_HEIGHT` set the maximum game display size.
+During gameplay, the display scales down proportionally when needed to leave
+room for the controls without scrolling. It never enlarges beyond the configured
+size, and keeps the configured width-to-height ratio.
+
+
 ### Model checkpoints
 
 `MODEL_CHECKPOINT_BACKEND=local` is the Linux/WSL development default, for local

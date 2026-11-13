@@ -25,6 +25,26 @@ for (const eventName of ['dragstart', 'selectstart', 'contextmenu']) {
     gameWrapper.addEventListener(eventName, (event) => event.preventDefault());
 }
 
+// Keep the configured display ratio and only scale down to fit the viewport.
+const videoWidth = Number(vid.getAttribute('width'));
+const videoHeight = Number(vid.getAttribute('height'));
+
+function fitGameVideo() {
+    if (!isConnected || videoWidth <= 0 || videoHeight <= 0) return;
+    const controlsStyle = getComputedStyle(controls);
+    const controlsHeight = controls.getBoundingClientRect().height
+        + parseFloat(controlsStyle.marginTop) + parseFloat(controlsStyle.marginBottom);
+    const availableHeight = Math.max(0, gameWrapper.clientHeight - controlsHeight);
+    const scale = Math.min(1, gameWrapper.clientWidth / videoWidth,
+        availableHeight / videoHeight);
+    vid.style.width = `${videoWidth * scale}px`;
+    vid.style.height = `${videoHeight * scale}px`;
+}
+
+const gameSizeObserver = new ResizeObserver(fitGameVideo);
+gameSizeObserver.observe(gameWrapper);
+gameSizeObserver.observe(controls);
+
 let environments = [];
 let aiPlayers = [];
 let envAgentsMap = {};
@@ -263,6 +283,7 @@ startBtn.addEventListener("click", () => {
             document.documentElement.classList.add('playing');
             window.scrollTo(0, 0);
             startJoystick();
+            fitGameVideo();
             checkEnableStart();
 
             document.addEventListener("keydown", handleKeydown);
