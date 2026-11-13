@@ -19,11 +19,21 @@ let joystickDirection = null;
 let actionPointerId = null;
 const SEND_INTERVAL_MS = 50;
 
+// Prevent native dragging, selection, and long-press menus on game controls.
+const gameWrapper = document.getElementById('game-wrapper');
+for (const eventName of ['dragstart', 'selectstart', 'contextmenu']) {
+    gameWrapper.addEventListener(eventName, (event) => event.preventDefault());
+}
+
 let environments = [];
 let aiPlayers = [];
 let envAgentsMap = {};
 
 function handleKeydown(e) {
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ',
+        'PageUp', 'PageDown', 'Home', 'End'].includes(e.key)) {
+        e.preventDefault();
+    }
     const sizeBefore = pressedKeys.size;
     pressedKeys.add(e.key);
     if (pressedKeys.size !== sizeBefore) lastSendTime = 0;
@@ -145,6 +155,7 @@ function cleanup() {
     socket = null;
     startBtn.disabled = false;
     isConnected = false;
+    document.documentElement.classList.remove('playing');
 
     document.removeEventListener("keydown", handleKeydown);
     document.removeEventListener("keyup", handleKeyup);
@@ -248,6 +259,9 @@ startBtn.addEventListener("click", () => {
             vid.style.display = 'block';
             controls.style.display = 'block';
             isConnected = true;
+            window.getSelection()?.removeAllRanges();
+            document.documentElement.classList.add('playing');
+            window.scrollTo(0, 0);
             startJoystick();
             checkEnableStart();
 

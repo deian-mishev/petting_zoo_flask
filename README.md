@@ -140,15 +140,6 @@ checkpoint files. Missing Blob configuration never silently falls back to the
 mounted file share. The earlier SQLite errors demonstrate a locking failure,
 not that the existing Azure Files share or model files are corrupt.
 
-On first load, a missing Blob manifest is created automatically with empty
-history. The server then builds a fresh model in memory and publishes `v1` on
-its first successful save. Existing files on `model-data` are ignored, even if
-they exist; they are not overwritten by the Blob backend. Concurrent first
-loads use one shared manifest generation. Existing Blob checkpoints still load
-normally; invalid manifests, missing archives, and storage failures remain errors.
-To preserve trained models from the file share, explicitly bootstrap them before
-their first load; otherwise those models start fresh.
-
 The opt-in `azure_blob` backend stores each model and target-weights pair in an
 immutable, checksummed Blob. A conditional manifest update publishes one pair
 at a time, with sequential version numbers. The current version and up to
