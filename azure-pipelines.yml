@@ -1,4 +1,8 @@
-trigger: none
+trigger:
+  branches:
+    include:
+      - main
+
 pr: none
 
 pool:
@@ -28,6 +32,7 @@ steps:
         pettingzoo1643228121.azurecr.io/petting-zoo-web:$(Build.BuildId)
       docker push pettingzoo1643228121.azurecr.io/petting-zoo-web:$(Build.BuildId)
     displayName: Push tested image to registry
+
   - task: AzureCLI@2
     displayName: Check access to web app
     inputs:
@@ -40,6 +45,7 @@ steps:
           --resource-group rg-petting-zoo-dev \
           --query "{name:name,image:properties.template.containers[0].image}" \
           --output table
+
   - task: AzureCLI@2
     displayName: Deploy Flask image
     inputs:
