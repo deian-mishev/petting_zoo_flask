@@ -3,6 +3,8 @@ anyio==4.9.0
 astunparse==1.6.3
 attrs==25.3.0
 Authlib==1.6.0
+azure-identity>=1.15,<2
+azure-storage-blob>=12.19,<13
 AutoROM==0.6.1
 bidict==0.23.1
 blinker==1.9.0

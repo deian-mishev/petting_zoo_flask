@@ -3,8 +3,8 @@ import logging
 import os
 import re
 import shutil
-import sqlite3
 import tempfile
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
@@ -14,6 +14,15 @@ _VERSION = re.compile(r"v([1-9][0-9]*)\Z")
 _LEGACY_VERSION = re.compile(r"[0-9a-f]{32}\Z")
 _RETAINED_VERSIONS = 4
 _LOGGER = logging.getLogger(__name__)
+
+
+def _checkpoint_backend():
+    backend = os.getenv("MODEL_CHECKPOINT_BACKEND", "local").strip().lower()
+    if backend not in {"local", "azure_blob"}:
+        raise ValueError(f"Unknown model checkpoint backend: {backend}")
+    if backend == "local" and os.getenv("CONTAINER_APP_NAME"):
+        raise ValueError("Azure Container Apps requires MODEL_CHECKPOINT_BACKEND=azure_blob; migrate models before enabling it")
+    return backend
 
 
 def _checkpoint_root(model_path):
@@ -35,15 +44,29 @@ def _sync_directory(path):
 
 
 @contextmanager
-def _checkpoint_lock(root):
-    root.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(str(root / "checkpoint.lock.sqlite3"), timeout=120)
+def _checkpoint_lock(root, *, exclusive=True, timeout=120):
+    if os.getenv("CONTAINER_APP_NAME"):
+        raise ValueError("Local checkpoint locks are not supported in Azure Container Apps; use azure_blob")
     try:
-        connection.execute("BEGIN IMMEDIATE")
-        yield
-        connection.commit()
-    finally:
-        connection.close()
+        import fcntl
+    except ImportError as error:
+        raise ValueError("Local checkpoints require POSIX file locking; use Linux/WSL or azure_blob") from error
+    root.mkdir(parents=True, exist_ok=True)
+    with (root / "checkpoint.lock").open("a+b") as lock_file:
+        operation = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                fcntl.flock(lock_file, operation | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(f"Timed out acquiring checkpoint lock: {root}") from None
+                time.sleep(0.05)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 def _checkpoint_files(root, version):
@@ -110,7 +133,7 @@ def locked_model_files(model_path, weights_path):
         raise ValueError("Both model and target weights paths must be configured")
 
     root = _checkpoint_root(model_path)
-    with _checkpoint_lock(root):
+    with _checkpoint_lock(root, exclusive=False):
         manifest = _read_manifest(root)
         if manifest is not None:
             yield _checkpoint_files(root, manifest["version"])
@@ -125,6 +148,24 @@ def locked_model_files(model_path, weights_path):
         if not model.is_file() or not weights.is_file():
             raise FileNotFoundError("Both legacy model and target weights files are required")
         yield str(model), str(weights)
+
+
+@contextmanager
+def load_model_checkpoint(model_path, weights_path):
+    backend = _checkpoint_backend()
+    if backend == "azure_blob":
+        if not model_path and not weights_path:
+            yield None, None
+            return
+        if not model_path or not weights_path:
+            raise ValueError("Both model and target weights paths must be configured")
+        from app.services.blob_checkpoints import blob_store_from_environment
+        with blob_store_from_environment() as store:
+            with store.load(model_path) as result:
+                yield result
+    elif backend == "local":
+        with locked_model_files(model_path, weights_path) as files:
+            yield files, None
 
 
 def _next_version(root, manifest):
@@ -169,9 +210,14 @@ def _cleanup_versions(root, cleanup, history):
             _LOGGER.warning("Could not remove old checkpoint %s", path, exc_info=True)
 
 
-def save_model_checkpoint(model_path, model, target_model, validate):
+def save_model_checkpoint(model_path, model, target_model, validate, expected_generation=None):
     if not model_path:
         raise ValueError("Model path must be configured")
+    backend = _checkpoint_backend()
+    if backend == "azure_blob":
+        from app.services.blob_checkpoints import blob_store_from_environment
+        with blob_store_from_environment() as store:
+            return store.save(model_path, model, target_model, validate, expected_generation)
     root = _checkpoint_root(model_path)
     versions = root / "versions"
     versions.mkdir(parents=True, exist_ok=True)

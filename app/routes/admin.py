@@ -52,8 +52,15 @@ def train():
         env=env
     )
     populate_session_agents(session_state, env_config, players)
-    ml_service.load_model(sid, session_state,
-                          obs_shape, num_actions)
+    try:
+        ml_service.load_model(sid, session_state, obs_shape, num_actions)
+    except Exception:
+        app.logger.exception(f"{sid}: Failed to load training models")
+        try:
+            env.close()
+        except Exception:
+            app.logger.exception(f"{sid}: Failed to close training environment")
+        return jsonify({"error": "Training models are unavailable. Please try again later."}), 503
     session_state.agent_iter = agent_iter
     session_state.current_agent = session_state.agents[current_agent]
 

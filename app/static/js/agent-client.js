@@ -140,7 +140,9 @@ function gameLoop(timestamp) {
 }
 
 function cleanup() {
-    if (!isConnected) return;
+    if (!isConnected && !socket) return;
+    const previousSocket = socket;
+    socket = null;
     startBtn.disabled = false;
     isConnected = false;
 
@@ -154,11 +156,7 @@ function cleanup() {
     clearInputs();
     lastSentKeys = '';
 
-    if (socket?.connected) {
-        socket.disconnect();
-    }
-
-    socket = null;
+    previousSocket?.disconnect();
     title.textContent = "Episode ended, play again ..";
     vid.style.display = 'none';
     controls.style.display = 'none';
@@ -225,7 +223,10 @@ startBtn.addEventListener("click", () => {
     startBtn.disabled = true;
     const selects = playerConfigDiv.querySelectorAll("select");
     const environment = envSelect.value;
-    if (!environment || selects.length === 0) return;
+    if (!environment || selects.length === 0) {
+        checkEnableStart();
+        return;
+    }
 
     const players = {};
     selects.forEach(sel => {
@@ -253,12 +254,14 @@ startBtn.addEventListener("click", () => {
             document.addEventListener("keydown", handleKeydown);
             document.addEventListener("keyup", handleKeyup);
             requestAnimationFrame(gameLoop);
-        },
-        (error) => {
-            console.error("Socket connection error:", error);
-            cleanup();
         }
     );
+
+    socket.on("connect_error", (error) => {
+        console.error("Socket connection error:", error);
+        cleanup();
+        title.textContent = "Game could not start. Please try again later.";
+    });
 
     socket.on("frame", (frameBytes) => {
         const blob = new Blob([frameBytes], { type: 'image/jpeg' });

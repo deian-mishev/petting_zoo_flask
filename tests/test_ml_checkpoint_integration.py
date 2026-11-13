@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import numpy as np
 import tensorflow as tf
+from test_blob_checkpoints import MemoryBlobs
 
 
 with patch.dict(os.environ, {"ENV": "DEV"}):
@@ -15,9 +16,17 @@ with patch.dict(os.environ, {"ENV": "DEV"}):
     from app.config.player_state import PlayerState, PlayerType
     from app.services.ml_service import ml_service
     from app.services.model_checkpoints import locked_model_files
+    from app.services.blob_checkpoints import (
+        BlobCheckpointStore, CheckpointConflict, CheckpointNotFound, _prefix, _validate_with_keras,
+    )
 
 
 class MLCheckpointIntegrationTests(unittest.TestCase):
+    def setUp(self):
+        environment = patch.dict(os.environ, {"MODEL_CHECKPOINT_BACKEND": "local", "CONTAINER_APP_NAME": ""})
+        environment.start()
+        self.addCleanup(environment.stop)
+
     def new_network(self, player_type):
         if player_type == PlayerType.ATARI_PRO:
             return ml_service.build_multi_head_q_network((52, 40, 1), ATTARI_PRO_MODEL_HEADS)
@@ -57,6 +66,7 @@ class MLCheckpointIntegrationTests(unittest.TestCase):
                 with locked_model_files(str(model_path), str(weights_path)) as saved_files:
                     self.assertIsNotNone(saved_files)
                     self.assertEqual(Path(saved_files[0]).parent.name, "v1")
+                    _validate_with_keras(*saved_files)
                 self.assertFalse(model_path.exists())
                 self.assertFalse(weights_path.exists())
 
@@ -85,6 +95,69 @@ class MLCheckpointIntegrationTests(unittest.TestCase):
                 np.testing.assert_allclose(actual, expected)
             for expected, actual in zip(target.get_weights(), agent.target_q_network.get_weights()):
                 np.testing.assert_allclose(actual, expected)
+
+    def test_blob_migration_and_stale_real_model_training(self):
+        with tempfile.TemporaryDirectory() as directory:
+            model_path = Path(directory) / "legacy.keras"
+            weights_path = Path(directory) / "legacy.weights.h5"
+            model = self.new_network(PlayerType.COMPUTER)
+            target = self.new_network(PlayerType.COMPUTER)
+            target.set_weights(model.get_weights())
+            model.compile(optimizer=tf.keras.optimizers.Adam(), loss="mse")
+            model.save(str(model_path))
+            target.save_weights(str(weights_path))
+            store = BlobCheckpointStore(MemoryBlobs(CheckpointNotFound, CheckpointConflict))
+            store.bootstrap(str(model_path), str(weights_path), _validate_with_keras)
+
+            with patch.dict(os.environ, {"MODEL_CHECKPOINT_BACKEND": "azure_blob", "CONTAINER_APP_NAME": "web"}), patch(
+                "app.services.blob_checkpoints.blob_store_from_environment", return_value=store
+            ):
+                first, first_agent = self.new_session(PlayerType.COMPUTER, model_path, weights_path)
+                second, second_agent = self.new_session(PlayerType.COMPUTER, model_path, weights_path)
+                ml_service.load_model("first", first, (52, 40, 1), 18)
+                ml_service.load_model("second", second, (52, 40, 1), 18)
+                self.assertEqual(first_agent.checkpoint_generation, second_agent.checkpoint_generation)
+                ml_service.train_model("first", first)
+                first_generation = first_agent.checkpoint_generation
+                ml_service.train_model("first", first)
+                self.assertNotEqual(first_agent.checkpoint_generation, first_generation)
+                ml_service.train_model("second", second)
+                manifest, _ = store._manifest(_prefix(str(model_path)))
+                self.assertEqual(manifest["high_water"], 3)
+                self.assertEqual(manifest["generation"], first_agent.checkpoint_generation)
+                self.assertNotEqual(manifest["generation"], second_agent.checkpoint_generation)
+                self.assertFalse(Path(f"{model_path}.checkpoints").exists())
+
+    def test_blob_shared_human_and_pro_generations_advance_together(self):
+        with tempfile.TemporaryDirectory() as directory:
+            model_path = Path(directory) / "shared.keras"
+            weights_path = Path(directory) / "shared.weights.h5"
+            model = self.new_network(PlayerType.ATARI_PRO)
+            target = self.new_network(PlayerType.ATARI_PRO)
+            target.set_weights(model.get_weights())
+            model.compile(optimizer=tf.keras.optimizers.Adam(), loss="mse")
+            model.save(str(model_path))
+            target.save_weights(str(weights_path))
+            store = BlobCheckpointStore(MemoryBlobs(CheckpointNotFound, CheckpointConflict))
+            store.bootstrap(str(model_path), str(weights_path), _validate_with_keras)
+            session, human = self.new_session(PlayerType.HUMAN, model_path, weights_path)
+            _, pro = self.new_session(PlayerType.ATARI_PRO, model_path, weights_path)
+            session.agents["second_0"] = pro
+
+            with patch.dict(os.environ, {"MODEL_CHECKPOINT_BACKEND": "azure_blob"}), patch(
+                "app.services.blob_checkpoints.blob_store_from_environment", return_value=store
+            ):
+                ml_service.load_model("shared", session, (52, 40, 1), 18)
+                self.assertIs(human.q_network, pro.q_network)
+                self.assertEqual(human.checkpoint_generation, pro.checkpoint_generation)
+                old_generation = human.checkpoint_generation
+                ml_service.train_model("shared", session)
+                self.assertNotEqual(human.checkpoint_generation, old_generation)
+                self.assertEqual(human.checkpoint_generation, pro.checkpoint_generation)
+                ml_service.train_model("shared", session)
+                manifest, _ = store._manifest(_prefix(str(model_path)))
+                self.assertEqual(manifest["high_water"], 3)
+                self.assertEqual(human.checkpoint_generation, pro.checkpoint_generation)
 
 
 if __name__ == "__main__":

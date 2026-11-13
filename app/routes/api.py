@@ -1,4 +1,4 @@
-from flask_socketio import disconnect
+from flask_socketio import ConnectionRefusedError, disconnect
 from flask import request, jsonify, session, render_template
 
 from app import app, socketio, client_sessions, client_sessions_lock
@@ -23,7 +23,7 @@ def preconnect():
 
 
 @socketio.on('connect')
-def on_connect():
+def on_connect(auth=None):
     user = session.get('user')
     roles = session.get('roles', [])
 
@@ -60,8 +60,15 @@ def on_connect():
     )
 
     populate_session_agents(session_state, env_config, players)
-    ml_service.load_model(sid, session_state,
-                          obs_shape, num_actions)
+    try:
+        ml_service.load_model(sid, session_state, obs_shape, num_actions)
+    except Exception as error:
+        app.logger.exception(f"{sid}: Failed to load game models")
+        try:
+            env.close()
+        except Exception:
+            app.logger.exception(f"{sid}: Failed to close game environment")
+        raise ConnectionRefusedError("Game models are unavailable. Please try again later.") from error
     session_state.agent_iter = agent_iter
     session_state.current_agent = session_state.agents[current_agent]
 

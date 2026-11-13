@@ -5,6 +5,12 @@ trigger:
 
 pr: none
 
+parameters:
+  - name: deployApp
+    displayName: Deploy image (disable when preparing checkpoint migration)
+    type: boolean
+    default: true
+
 pool:
   vmImage: ubuntu-latest
 
@@ -48,11 +54,23 @@ steps:
 
   - task: AzureCLI@2
     displayName: Deploy Flask image
+    condition: and(succeeded(), ${{ eq(parameters.deployApp, true) }})
     inputs:
       azureSubscription: petting-zoo-deploy
       scriptType: bash
       scriptLocation: inlineScript
       inlineScript: |
+        set -euo pipefail
+        backend=$(az containerapp show \
+          --name petting-zoo-web \
+          --resource-group rg-petting-zoo-dev \
+          --query "properties.template.containers[?name=='petting-zoo-web'].env[] | [?name=='MODEL_CHECKPOINT_BACKEND'].value | [0]" \
+          --output tsv)
+        if [ "$backend" != "azure_blob" ]; then
+          echo "Checkpoint migration required: image pushed, deployment blocked."
+          echo "Stop old writers, bootstrap Blob checkpoints, then cut over the image and backend together."
+          exit 1
+        fi
         az containerapp update \
           --name petting-zoo-web \
           --resource-group rg-petting-zoo-dev \

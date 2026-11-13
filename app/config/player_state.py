@@ -25,6 +25,7 @@ class PlayerState:
     type: PlayerType = None
     model_path: str = None
     weights_path: str = None
+    checkpoint_generation: Optional[str] = None
     q_network: tf.keras.Model = None
     target_q_network: tf.keras.Model = None
     optimizer: tf.keras.optimizers.Optimizer = None

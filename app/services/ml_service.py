@@ -8,7 +8,8 @@ from app.config.env_config import *
 from app.config.ml_env_config import ATTARI_PRO_MODEL_HEADS
 from app.config.session_state import SessionState
 from app.config.player_state import PlayerState, PlayerType
-from app.services.model_checkpoints import locked_model_files, save_model_checkpoint
+from app.services.model_checkpoints import load_model_checkpoint, save_model_checkpoint
+from app.services.blob_checkpoints import StaleCheckpointError
 
 import random
 import numpy as np
@@ -57,16 +58,27 @@ class MLService:
                     app.logger.warning(f"{sid}: Skipping save for {save_key} — model path not configured")
                     continue
                 app.logger.info(f"{sid}: Saving model for {save_key}")
-                version = save_model_checkpoint(
-                    agent_state.model_path,
-                    agent_state.q_network,
-                    agent_state.target_q_network,
-                    lambda model_path, weights_path: self._load_networks(
-                        model_path, weights_path, agent_state.type,
-                        session.env_config.observation_space,
-                        session.env_config.num_actions,
-                    ),
-                )
+                try:
+                    version = save_model_checkpoint(
+                        agent_state.model_path,
+                        agent_state.q_network,
+                        agent_state.target_q_network,
+                        lambda model_path, weights_path: self._load_networks(
+                            model_path, weights_path, agent_state.type,
+                            session.env_config.observation_space,
+                            session.env_config.num_actions,
+                        ),
+                        expected_generation=agent_state.checkpoint_generation,
+                    )
+                except StaleCheckpointError as error:
+                    app.logger.warning(f"{sid}: Skipping stale {save_key} training update: {error}")
+                    continue
+                generation = getattr(version, "generation", None)
+                if generation is not None:
+                    for other in session.agents.values():
+                        if (other.q_network is agent_state.q_network
+                                and other.target_q_network is agent_state.target_q_network):
+                            other.checkpoint_generation = generation
                 app.logger.info(f"{sid}: Published {save_key} checkpoint {version}")
 
     def train_step(self, current_agent: PlayerState, env_name = False):
@@ -301,10 +313,12 @@ class MLService:
                     player_state.q_network = other.q_network
                     player_state.target_q_network = other.target_q_network
                     player_state.optimizer = other.optimizer
+                    player_state.checkpoint_generation = other.checkpoint_generation
                     continue
             
             seen_states[player_state.type] = player_state
-            with locked_model_files(player_state.model_path, player_state.weights_path) as model_files:
+            with load_model_checkpoint(player_state.model_path, player_state.weights_path) as (model_files, generation):
+                player_state.checkpoint_generation = generation
                 if model_files is not None:
                     app.logger.info(
                         f"{sid}: Loading existing models {model_files[0]}")

@@ -124,46 +124,124 @@ ATTARI_PRO_MODEL=
 ATTARI_PRO_WEIGHTS_PATH=
 ```
 
-Per-environment models are saved automatically to `./resources/models/keras/` on training. The `resources/` directory is git-ignored.
+### Model checkpoints
 
-Each model is saved as a pair of files under
-`<model path>.checkpoints/versions/v1`, `v2`, and so on. Both files are loaded
-for validation before `current.json` is atomically replaced. Failed or
-interrupted saves may leave gaps in the sequence. The manifest tracks the
-highest allocated number and the current version followed by up to three
-rollback versions. After publishing, older managed versions are removed;
-cleanup failures are logged and retried on a later save. Separate backups are
-still necessary, and disk space must be monitored.
+`MODEL_CHECKPOINT_BACKEND=local` is the Linux/WSL development default, for local
+disks only. It stores paired model files under `resources/models/keras/` with
+POSIX shared-reader/exclusive-writer file locks. Readers do not block other
+readers; publication and cleanup wait for readers to finish. SQLite is no longer
+used by checkpoint code. Existing SQLite files are left untouched. Stop all
+older processes before using the new local backend: the old and new locks do
+not coordinate with each other. Do not use local locks on network shares.
 
-A per-model SQLite lock coordinates publication, cleanup, and the complete
-loading of both files across cooperating app processes. It is not taken for
-gameplay frames. Existing unversioned model and weights files remain unchanged
-and can be loaded together before the first publication. A pointer from the
-earlier UUID-based format is also supported and becomes a rollback version on
-the next save. Untracked UUID directories and abandoned staging directories
-are not automatically deleted; inspect them with the app stopped before any
-manual cleanup. Invalid pointers, missing published files, or a missing pointer
-with completed version directories cause an error instead of silently loading
-an older model or initializing a new one.
+Azure Container Apps must explicitly use `MODEL_CHECKPOINT_BACKEND=azure_blob`.
+When `CONTAINER_APP_NAME` is present, local load/save is rejected before writing
+checkpoint files. Missing Blob configuration never silently falls back to the
+mounted file share. The earlier SQLite errors demonstrate a locking failure,
+not that the existing Azure Files share or model files are corrupt.
 
-For rollback, stop all app instances and back up the checkpoint directory.
-Verify that the desired version in `history` has a usable model and target
-weights. Atomically replace `current.json` with a manifest whose `version` is
-that version and whose `history` starts with it, followed by the other retained
-versions in the desired order. Keep `high_water` and any other manifest fields
-unchanged, preserve all retained directories, and restart the app only after
-the replacement is complete. There is no automated rollback command.
+The opt-in `azure_blob` backend stores each model and target-weights pair in an
+immutable, checksummed Blob. A conditional manifest update publishes one pair
+at a time, with sequential version numbers. The current version and up to
+three earlier rollback targets are retained. Cleanup is retried after later
+saves if deletion fails. An uploaded candidate rejected before any publication
+attempt is deleted best-effort. A lost publication response is reconciled only
+when the manifest's generation and current entry exactly match that attempt.
+Uploads with an unverified publication outcome are deliberately not automatically
+deleted; monitor Blob usage. Thus retention limits published history, not total
+storage usage after failures. Concurrent
+sessions can play, but if another session publishes first, the later session's
+training update is discarded rather than overwriting the newer model. Storage
+is contacted on model load and save, not for individual gameplay frames;
+loading, training, validation and network transfers can still affect resources.
 
-This protection requires shared persistent storage with working cross-process
-SQLite file locking, atomic same-filesystem rename/replacement, and directory
-and file synchronization. Verify these properties for the actual deployment;
-container-local storage does not share checkpoints across replicas or survive
-replacement. Concurrent sessions can still publish independently trained
-copies, so the last publication may lose another session's training progress.
-The lock can delay model loads and publications, and saving and validation use
-CPU, memory, and disk I/O, which can affect gameplay performance. Validation
-and versioning do not protect against hardware failure, filesystem corruption,
-bad training, or manual modification.
+Use your **existing storage account**: create a private Blob container alongside
+the existing file share, not another storage account or a folder inside the share.
+The Blob container is accessed through the Azure SDK; it is not mounted as a
+filesystem. No changes to the file-share folder layout are required.
+
+To switch an existing deployment, **stop all old app instances and writers**
+before migrating, including running jobs and older revisions. Provision a
+Blob container and grant the app's managed identity **Storage Blob
+Data Contributor** on that container (or equivalent read, write and delete
+permissions). Confirm the container network and identity access. No Azure
+resources are created or permissions assigned by the application.
+
+Set these variables in the app and in the controlled migration environment:
+
+```text
+MODEL_CHECKPOINT_BACKEND=azure_blob
+MODEL_CHECKPOINT_BLOB_ACCOUNT_URL=https://<account>.blob.core.windows.net
+MODEL_CHECKPOINT_BLOB_CONTAINER=<container>
+MODEL_CHECKPOINT_MANAGED_IDENTITY_CLIENT_ID=<user-assigned-identity-client-id>
+```
+
+Leave the client ID blank for a system-assigned identity. The migration
+environment must have the same managed identity access, dependencies, mounted
+local files and configured model paths as the app. Use exactly the same model
+path spelling in every instance and in migration commands: its normalized path
+identifies the logical Blob checkpoint. First list the actual configured paths
+(including the optional Atari Pro / Human model), without contacting Blob storage:
+
+```sh
+python -m app.services.blob_checkpoints inventory
+```
+
+For each listed model, run, for example:
+
+```sh
+python -m app.services.blob_checkpoints bootstrap ./resources/models/keras/boxing_v2.keras ./resources/models/keras/boxing_v2.weights.h5 --writers-stopped
+python -m app.services.blob_checkpoints status ./resources/models/keras/boxing_v2.keras
+```
+
+`--writers-stopped` is your explicit operational confirmation, not an automatic
+lock or a mechanism that stops apps. Bootstrap reads the source files without
+modifying them or creating backups. It imports the current local manifest and retained history when present,
+or the existing legacy model/weights pair, validating each pair. A missing,
+incomplete or invalid pair fails instead of silently creating a new model. For
+an intentionally new model only, use `bootstrap <model-path> <weights-path>
+--empty --writers-stopped`; it refuses existing local model files or checkpoint history. Blob
+manifests cannot be overwritten by bootstrap. Repeat for all configured model
+paths, including the Atari Pro path if configured, run `status-all` to check
+that every configured model has a valid manifest, then
+switch the app to `azure_blob`. A missing Blob manifest or unavailable storage
+prevents that game from starting; there is no fallback to SQLite or new models.
+Keep old writers stopped after cutover, including during deployment rollouts.
+
+#### Deployment order
+
+1. Build and push the new image without deploying: run the Azure pipeline with
+   `deployApp=false`. This does not switch the running app's storage backend.
+2. Create the private Blob container and assign the container-scoped role.
+   Keep your existing share, model files, and mounted paths intact.
+3. Arrange a maintenance window and stop every old app revision and training
+   writer. Use a separate, manually triggered Azure Container Apps Job with the
+   new image, the managed identity, and the existing share mounted **read-only**
+   at `/app/resources` for migration. Do not use a serving replica as the
+   migration environment. Give the job the variables listed above and the same
+   configured model paths, including `ATTARI_PRO_MODEL` and its weights path.
+4. Run `inventory`, then bootstrap each model, then `status-all` in that job.
+   Stop if any command fails; do not enable the new backend over missing models.
+   These commands require SDK dependencies and identity/network access, not SQLite.
+5. Deploy the new image and the Blob variables together, then enable traffic
+   only to the new revision. Confirm game startup and saved version progression.
+   Do not reactivate old local writers as a rollback after Blob training begins.
+
+The pipeline's deployment step refuses to update an app not yet configured for
+`azure_blob`; the initial image/backend cutover is a deliberate maintenance
+operation. After cutover, normal pipeline deployment can resume. No live Azure
+integration test is performed by the local unit tests. An incorrect identity,
+firewall, endpoint, or missing manifest will still prevent game startup, with a
+recoverable client error; fix configuration rather than falling back to old models.
+
+To roll back, use `status <model-path>` to list retained versions, then run
+`rollback <model-path> <version>` with the same module. Rollback checks the
+stored pair's checksum and conditionally switches the manifest; concurrent
+changes make it fail instead of overwriting them. Previously running sessions
+become stale. The next publication continues above the highest issued version.
+Validate model behavior separately; rollback targets are not a substitute for
+independent disaster recovery, and checksums do not prevent bad training or
+unauthorized modifications.
 
 ## Running
 

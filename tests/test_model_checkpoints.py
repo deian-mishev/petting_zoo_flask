@@ -53,6 +53,9 @@ def save_from_process(model_path, value, barrier, results):
 
 class ModelCheckpointTests(unittest.TestCase):
     def setUp(self):
+        environment = patch.dict(os.environ, {"MODEL_CHECKPOINT_BACKEND": "local", "CONTAINER_APP_NAME": ""})
+        environment.start()
+        self.addCleanup(environment.stop)
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.model_path = Path(self.directory.name) / "legacy.keras"
@@ -88,6 +91,36 @@ class ModelCheckpointTests(unittest.TestCase):
         self.assertEqual(self.save(b"new"), "v1")
         self.assertEqual(self.model_path.read_bytes(), b"old-model")
         self.assertEqual(self.weights_path.read_bytes(), b"old-target")
+
+    def test_load_and_save_never_create_sqlite_files(self):
+        self.save(b"first")
+        self.assertEqual(self.resolved_contents(), (b"first", b"first"))
+        self.assertEqual(list(self.root.glob("*.sqlite3*")), [])
+
+    def test_azure_container_apps_cannot_use_local_backend(self):
+        with patch.dict(os.environ, {"CONTAINER_APP_NAME": "petting-zoo-web"}):
+            with self.assertRaisesRegex(ValueError, "azure_blob"):
+                self.save(b"first")
+            with self.assertRaisesRegex(ValueError, "azure_blob"):
+                with checkpoint_functions["load_model_checkpoint"](str(self.model_path), str(self.weights_path)):
+                    pass
+        self.assertFalse(self.root.exists())
+
+    def test_readers_can_load_the_same_checkpoint_concurrently(self):
+        self.save(b"first")
+        reader_finished = threading.Event()
+
+        def second_reader():
+            contents = self.resolved_contents()
+            reader_finished.set()
+            return contents
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            with locked_model_files(str(self.model_path), str(self.weights_path)):
+                future = executor.submit(second_reader)
+                finished_while_locked = reader_finished.wait(timeout=2)
+            self.assertEqual(future.result(timeout=5), (b"first", b"first"))
+        self.assertTrue(finished_while_locked, "Model readers should not block each other")
 
     def test_incomplete_legacy_pair_fails_closed(self):
         self.model_path.write_bytes(b"model")
