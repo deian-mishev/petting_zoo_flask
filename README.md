@@ -126,6 +126,45 @@ ATTARI_PRO_WEIGHTS_PATH=
 
 Per-environment models are saved automatically to `./resources/models/keras/` on training. The `resources/` directory is git-ignored.
 
+Each model is saved as a pair of files under
+`<model path>.checkpoints/versions/v1`, `v2`, and so on. Both files are loaded
+for validation before `current.json` is atomically replaced. Failed or
+interrupted saves may leave gaps in the sequence. The manifest tracks the
+highest allocated number and the current version followed by up to three
+rollback versions. After publishing, older managed versions are removed;
+cleanup failures are logged and retried on a later save. Separate backups are
+still necessary, and disk space must be monitored.
+
+A per-model SQLite lock coordinates publication, cleanup, and the complete
+loading of both files across cooperating app processes. It is not taken for
+gameplay frames. Existing unversioned model and weights files remain unchanged
+and can be loaded together before the first publication. A pointer from the
+earlier UUID-based format is also supported and becomes a rollback version on
+the next save. Untracked UUID directories and abandoned staging directories
+are not automatically deleted; inspect them with the app stopped before any
+manual cleanup. Invalid pointers, missing published files, or a missing pointer
+with completed version directories cause an error instead of silently loading
+an older model or initializing a new one.
+
+For rollback, stop all app instances and back up the checkpoint directory.
+Verify that the desired version in `history` has a usable model and target
+weights. Atomically replace `current.json` with a manifest whose `version` is
+that version and whose `history` starts with it, followed by the other retained
+versions in the desired order. Keep `high_water` and any other manifest fields
+unchanged, preserve all retained directories, and restart the app only after
+the replacement is complete. There is no automated rollback command.
+
+This protection requires shared persistent storage with working cross-process
+SQLite file locking, atomic same-filesystem rename/replacement, and directory
+and file synchronization. Verify these properties for the actual deployment;
+container-local storage does not share checkpoints across replicas or survive
+replacement. Concurrent sessions can still publish independently trained
+copies, so the last publication may lose another session's training progress.
+The lock can delay model loads and publications, and saving and validation use
+CPU, memory, and disk I/O, which can affect gameplay performance. Validation
+and versioning do not protect against hardware failure, filesystem corruption,
+bad training, or manual modification.
+
 ## Running
 
 **With Docker Compose (recommended for local dev)**
@@ -255,8 +294,8 @@ petting_zoo_flask/
 The server runs Flask-SocketIO in **threading** mode:
 
 - Each active game session runs in its own `threading.Thread` spawned by `SessionRunner`.
-- `threading.Lock` guards the global session map, each session, and each model.
-- The ATARI_PRO model is a singleton protected by a global `ATTARI_PRO_LOCK`; only one session may use it at a time.
+- A `threading.Lock` guards the global session map and each regular model's training and save operations; sessions and Atari Pro use Eventlet semaphores.
+- Sessions can load separate model copies. Checkpoint publication protects file pairs from partial saves, but does not merge simultaneous training updates.
 - Frame delivery targets ~143 FPS (`INPUT_TIMEOUT = 0.007 s`).
 
 ## Logging

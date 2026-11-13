@@ -81,6 +81,7 @@ function releaseAction(event) {
     if (event.pointerId === actionPointerId) {
         actionPointerId = null;
         lastSendTime = 0;
+        sendInputIfChanged();
     }
 }
 
@@ -95,9 +96,14 @@ function clearInputs() {
     lastSendTime = 0;
 }
 
-window.addEventListener('blur', clearInputs);
+function clearInputsAndSend() {
+    clearInputs();
+    sendInputIfChanged();
+}
+
+window.addEventListener('blur', clearInputsAndSend);
 document.addEventListener('visibilitychange', () => {
-    if (document.hidden) clearInputs();
+    if (document.hidden) clearInputsAndSend();
 });
 
 function checkEnableStart() {
@@ -109,24 +115,24 @@ function checkEnableStart() {
     startBtn.disabled = humanCount > 1 || envSelect.value === "";
 }
 
+function sendInputIfChanged() {
+    if (!isConnected || !socket?.connected) return;
+
+    const keysArray = [...new Set([
+        ...(actionPointerId !== null ? ['s'] : []),
+        ...(joystickDirection ? [joystickDirection] : []),
+        ...pressedKeys,
+    ])];
+    const keyState = keysArray.join(',');
+    if (keyState !== lastSentKeys) {
+        lastSentKeys = keyState;
+        socket.emit('input', keysArray);
+    }
+}
+
 function gameLoop(timestamp) {
     if (timestamp - lastSendTime >= SEND_INTERVAL_MS) {
-        const keysArray = [...new Set([
-            ...(actionPointerId !== null ? ['s'] : []),
-            ...(joystickDirection ? [joystickDirection] : []),
-            ...pressedKeys,
-        ])];
-        if (keysArray.length > 0) {
-            const keyState = keysArray.join(',');
-
-            if (keyState !== lastSentKeys) {
-                lastSentKeys = keyState;
-                socket.emit('input', keysArray);
-            }
-        } else if (lastSentKeys !== '') {
-            lastSentKeys = '';
-            socket.emit('input', []);
-        }
+        sendInputIfChanged();
         lastSendTime = timestamp;
     }
 

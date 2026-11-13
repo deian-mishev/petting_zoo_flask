@@ -8,6 +8,7 @@ from app.config.env_config import *
 from app.config.ml_env_config import ATTARI_PRO_MODEL_HEADS
 from app.config.session_state import SessionState
 from app.config.player_state import PlayerState, PlayerType
+from app.services.model_checkpoints import locked_model_files, save_model_checkpoint
 
 import random
 import numpy as np
@@ -56,11 +57,17 @@ class MLService:
                     app.logger.warning(f"{sid}: Skipping save for {save_key} — model path not configured")
                     continue
                 app.logger.info(f"{sid}: Saving model for {save_key}")
-                parent = os.path.dirname(agent_state.model_path)
-                if parent:
-                    os.makedirs(parent, exist_ok=True)
-                agent_state.q_network.save(agent_state.model_path)
-                agent_state.target_q_network.save_weights(agent_state.weights_path)
+                version = save_model_checkpoint(
+                    agent_state.model_path,
+                    agent_state.q_network,
+                    agent_state.target_q_network,
+                    lambda model_path, weights_path: self._load_networks(
+                        model_path, weights_path, agent_state.type,
+                        session.env_config.observation_space,
+                        session.env_config.num_actions,
+                    ),
+                )
+                app.logger.info(f"{sid}: Published {save_key} checkpoint {version}")
 
     def train_step(self, current_agent: PlayerState, env_name = False):
         if len(current_agent.memory_buffer) < MINIBATCH_SIZE:
@@ -267,6 +274,23 @@ class MLService:
         """
         return max(E_MIN, E_DECAY * epsilon) if decrease else min(E_MAX, E_GROW * epsilon)
 
+    def _load_networks(self, model_path, weights_path, player_type, obs_shape, num_actions):
+        q_network = tf.keras.models.load_model(model_path)
+        if getattr(q_network, "optimizer", None) is None:
+            raise ValueError(f"Loaded model has no optimizer: {model_path}")
+        if player_type in [PlayerType.HUMAN, PlayerType.ATARI_PRO]:
+            target_q_network = self.build_multi_head_q_network(
+                obs_shape, ATTARI_PRO_MODEL_HEADS
+            )
+        else:
+            target_q_network = self.build_q_network(obs_shape, num_actions)
+        target_q_network.load_weights(weights_path)
+        model_shapes = [tuple(weight.shape) for weight in q_network.weights]
+        target_shapes = [tuple(weight.shape) for weight in target_q_network.weights]
+        if model_shapes != target_shapes:
+            raise ValueError("Model and target network architectures do not match")
+        return q_network, target_q_network
+
     def load_model(self, sid, session_state: SessionState, obs_shape, num_actions):
         seen_states: dict[PlayerType, PlayerState] = {}
         for player_state in session_state.agents.values():
@@ -280,20 +304,14 @@ class MLService:
                     continue
             
             seen_states[player_state.type] = player_state
-            if os.path.exists(player_state.model_path) and os.path.exists(player_state.weights_path):
-                app.logger.info(
-                    f"{sid}: Loading existing models ${player_state.model_path}")
-                player_state.q_network = tf.keras.models.load_model(
-                    player_state.model_path)
-                if player_state.type in [PlayerType.HUMAN, PlayerType.ATARI_PRO]:
-                    player_state.target_q_network = ml_service.build_multi_head_q_network(
-                        obs_shape, ATTARI_PRO_MODEL_HEADS
+            with locked_model_files(player_state.model_path, player_state.weights_path) as model_files:
+                if model_files is not None:
+                    app.logger.info(
+                        f"{sid}: Loading existing models {model_files[0]}")
+                    player_state.q_network, player_state.target_q_network = self._load_networks(
+                        *model_files, player_state.type, obs_shape, num_actions
                     )
-                else:
-                    player_state.target_q_network = ml_service.build_q_network(
-                        obs_shape, num_actions)
-                player_state.target_q_network.load_weights(
-                    player_state.weights_path)
+            if model_files is not None:
                 player_state.optimizer = player_state.q_network.optimizer
             else:
                 app.logger.info(f"{sid}: Initializing new model for: {player_state.type.value}")
