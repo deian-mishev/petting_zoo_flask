@@ -1,11 +1,12 @@
 import os
 import app
 from functools import wraps
-from flask import jsonify, redirect, request, session, url_for
+from flask import jsonify, redirect, render_template, request, session, url_for
+from authlib.integrations.base_client.errors import MismatchingStateError
 from authlib.integrations.flask_client import OAuth
 from jose import jwt
 import requests
-from urllib.parse import quote
+from urllib.parse import urlencode
 
 from dotenv import load_dotenv
 
@@ -119,7 +120,23 @@ def roles_required(*roles):
 
 @app.route('/auth')
 def auth():
-    token = oauth.api.authorize_access_token()
+    # Inspect before Authlib consumes the state, without logging cookies,
+    # authorization codes, tokens, or state values.
+    cookie_present = app.config['SESSION_COOKIE_NAME'] in request.cookies
+    session_present = bool(session)
+    try:
+        token = oauth.api.authorize_access_token()
+    except MismatchingStateError:
+        app.logger.warning(
+            "OAuth callback rejected: host=%s scheme=%s cookie_present=%s "
+            "session_present=%s state_present=%s. Check cookie delivery, "
+            "login/callback hosts, and FLASK_KEY consistency across replicas/revisions.",
+            request.host, request.scheme, cookie_present, session_present,
+            bool(request.args.get('state')),
+        )
+        # Do not automatically restart OAuth: persistent cookie/configuration
+        # problems would otherwise cause an endless redirect loop.
+        return render_template('auth_error.html'), 400
     userinfo = oauth.api.userinfo(token=token)
 
     roles = []
@@ -146,10 +163,13 @@ def logout():
     session.clear()
 
     redirect_uri = url_for('index', _external=True)
-    logout_url = f"{OAUTH2_LOGOUT_URL}?post_logout_redirect_uri={quote(redirect_uri, safe='')}"
+    logout_params = {
+        'client_id': OAUTH2_CLIENT_ID,
+        'post_logout_redirect_uri': redirect_uri,
+    }
     if id_token:
-        logout_url += f"&id_token_hint={quote(id_token)}"
-    return redirect(logout_url)
+        logout_params['id_token_hint'] = id_token
+    return redirect(f"{OAUTH2_LOGOUT_URL}?{urlencode(logout_params)}")
 
 
 @app.route('/login')
@@ -157,3 +177,12 @@ def login():
     session['next'] = request.args.get('next', url_for('index'))
     redirect_uri = url_for('auth', _external=True)
     return oauth.api.authorize_redirect(redirect_uri=redirect_uri)
+
+
+@app.after_request
+def prevent_auth_response_caching(response):
+    if request.endpoint in {'login', 'auth', 'logout'}:
+        response.headers['Cache-Control'] = 'no-store'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Referrer-Policy'] = 'no-referrer'
+    return response

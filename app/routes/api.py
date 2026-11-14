@@ -103,6 +103,13 @@ def on_disconnect():
     app.logger.info(f"{sid}: User disconnected...")
 
 
+@app.route('/favicon.ico')
+def favicon():
+    # Browsers request this independently of the page. It must not enter the
+    # protected catch-all route and start a competing OAuth flow.
+    return '', 204
+
+
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def index(path):

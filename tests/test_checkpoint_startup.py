@@ -86,6 +86,13 @@ class CheckpointStartupTests(unittest.TestCase):
             auth={"client": "test"},
         )
 
+    def test_anonymous_favicon_does_not_start_login_or_change_session(self):
+        anonymous = self.app.test_client()
+        response = anonymous.get("/favicon.ico")
+        self.assertEqual(response.status_code, 204)
+        self.assertNotIn("Location", response.headers)
+        self.assertNotIn("Set-Cookie", response.headers)
+
     def test_model_failure_rejects_connection_and_closes_environment(self):
         self.service.load_model.side_effect = OSError("storage unavailable")
         client = self.connect()
