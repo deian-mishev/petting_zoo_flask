@@ -162,7 +162,7 @@ def logout():
     id_token = session.get('id_token')
     session.clear()
 
-    redirect_uri = url_for('index', _external=True)
+    redirect_uri = 'https://www.ataripettingzoo.com/'
     logout_params = {
         'client_id': OAUTH2_CLIENT_ID,
         'post_logout_redirect_uri': redirect_uri,

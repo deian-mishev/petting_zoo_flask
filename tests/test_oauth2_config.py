@@ -276,7 +276,7 @@ class OAuthBrowserSessionTests(unittest.TestCase):
                 self.assertEqual(target.path, "/realms/test/protocol/openid-connect/logout")
                 self.assertEqual(parse_qs(target.query), {
                     "client_id": ["test-client"],
-                    "post_logout_redirect_uri": [origin + "/"],
+                    "post_logout_redirect_uri": ["https://www.ataripettingzoo.com/"],
                 })
 
     def test_logout_clears_session_sends_id_token_and_allows_second_login(self):
@@ -295,7 +295,7 @@ class OAuthBrowserSessionTests(unittest.TestCase):
                 self.assertEqual(response.headers["Cache-Control"], "no-store")
                 self.assertEqual(parse_qs(urlsplit(response.location).query), {
                     "client_id": ["test-client"],
-                    "post_logout_redirect_uri": [origin + "/"],
+                    "post_logout_redirect_uri": ["https://www.ataripettingzoo.com/"],
                     "id_token_hint": ["test.header.signature"],
                 })
                 self.assertIsNone(client.get_cookie("session", domain=urlsplit(origin).hostname))
