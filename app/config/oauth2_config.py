@@ -201,9 +201,15 @@ def ready():
     )
     response.status_code = 200 if auth_ready else 503
     response.headers["Cache-Control"] = "no-store"
-    response.headers["Access-Control-Allow-Origin"] = (
-        "https://white-sand-038397c0f.8.azurestaticapps.net"
-    )
+    allowed_origins = {
+        "https://ataripettingzoo.com",
+        "https://www.ataripettingzoo.com",
+        "https://white-sand-038397c0f.8.azurestaticapps.net",
+    }
+    origin = request.headers.get("Origin")
+    if origin in allowed_origins:
+        response.headers["Access-Control-Allow-Origin"] = origin
+    response.vary.add("Origin")
     return response
 
 @app.route('/login')

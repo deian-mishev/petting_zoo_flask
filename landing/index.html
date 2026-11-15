@@ -1,12 +1,26 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Atari Petting Zoo</title>
+  <meta name="description" content="Classic Atari games. Learning AI opponents. Play against an agent or watch AI take on AI in your browser.">
+  <link rel="canonical" href="https://www.ataripettingzoo.com/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Atari Petting Zoo | Play Against AI">
+  <meta property="og:description" content="Classic Atari games. Learning AI opponents. Play against an agent or watch AI take on AI in your browser.">
+  <meta property="og:url" content="https://www.ataripettingzoo.com/">
+  <meta property="og:image" content="https://www.ataripettingzoo.com/social-preview.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" href="data:,">
   <style>
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       margin: 0;
       min-height: 100vh;
@@ -17,29 +31,123 @@
       color: #eaf3d8;
       font-family: Arial, sans-serif;
     }
-    main { width: min(760px, 100%); }
-    img { width: 100%; height: auto; border-radius: 16px; }
-    h1 { font-size: clamp(28px, 6vw, 44px); }
-    p { color: #c4d5bb; font-size: 18px; line-height: 1.6; }
-    a {
+
+    main {
+      width: min(760px, 100%);
+    }
+
+    img {
+      width: 100%;
+      height: auto;
+      border-radius: 16px;
+    }
+
+    h1 {
+      font-size: clamp(28px, 6vw, 44px);
+    }
+
+    p {
+      color: #c4d5bb;
+      font-size: 18px;
+      line-height: 1.6;
+    }
+
+    button {
       display: inline-block;
       padding: 14px 24px;
       background: #c8e6a0;
       color: #10251b;
+      border: 0;
       border-radius: 8px;
+      font: inherit;
       font-weight: bold;
-      text-decoration: none;
+      cursor: pointer;
     }
-    a:focus-visible { outline: 3px solid white; outline-offset: 5px; }
+
+    button:disabled {
+      opacity: 0.65;
+      cursor: wait;
+    }
+
+    button:focus-visible {
+      outline: 3px solid white;
+      outline-offset: 5px;
+    }
   </style>
 </head>
+
 <body>
   <main>
-    <img src="social-preview.png" width="1200" height="630"
-         alt="Atari Petting Zoo pixel-art arcade">
+    <img src="social-preview.png" width="1200" height="630" alt="Atari Petting Zoo pixel-art arcade">
     <h1>Classic games. Learning opponents.</h1>
     <p>Play classic Atari games against AI, or watch agents compete.</p>
-    <a href="https://www.ataripettingzoo.com/login">Sign in to play</a>
+    <button id="play-button" type="button">Sign in to play</button>
+    <p id="startup-status" role="status" aria-live="polite"></p>
   </main>
+  <script>
+    const button = document.getElementById("play-button");
+    const status = document.getElementById("startup-status");
+    const appOrigin = "https://play.ataripettingzoo.com";
+
+    const sleep = milliseconds =>
+      new Promise(resolve => setTimeout(resolve, milliseconds));
+
+    button.addEventListener("click", async () => {
+      if (button.disabled) return;
+
+      button.disabled = true;
+      button.textContent = "Starting…";
+      status.textContent =
+        "Starting the game server. The first visit may take a little longer.";
+
+      const deadline = Date.now() + 180000;
+      let appResponded = false;
+
+      while (Date.now() < deadline) {
+        try {
+          const response = await fetch(`${appOrigin}/ready`, {
+            credentials: "omit",
+            cache: "no-store",
+            signal: AbortSignal.timeout(12000)
+          });
+
+          if (response.status === 200 || response.status === 503) {
+            const data = await response.json();
+
+            if (data.app_ready === true) {
+              appResponded = true;
+            }
+
+            if (
+              response.ok &&
+              data.app_ready === true &&
+              data.auth_ready === true &&
+              data.ready === true
+            ) {
+              status.textContent = "Servers are ready. Opening sign-in…";
+              window.location.assign(`${appOrigin}/login`);
+              return;
+            }
+          }
+        } catch {
+          // Timeouts and connection failures are expected during startup.
+        }
+
+        status.textContent = appResponded
+          ? "Game server responded. Waiting for the sign-in service…"
+          : "Still waiting for the game server to start…";
+
+        if (Date.now() < deadline) {
+          await sleep(3000);
+        }
+      }
+
+      status.textContent =
+        "The servers haven’t become ready yet. Please try again shortly.";
+      button.textContent = "Try again";
+      button.disabled = false;
+    });
+  </script>
 </body>
+
 </html>

@@ -131,6 +131,7 @@ class OAuthKeyRefreshTests(unittest.TestCase):
 
 class OAuthBrowserSessionTests(unittest.TestCase):
     ORIGIN = "https://ataripettingzoo.com"
+    ORIGINS = (ORIGIN, "https://www.ataripettingzoo.com", "https://play.ataripettingzoo.com")
 
     def setUp(self):
         self.app = Flask(
@@ -230,7 +231,7 @@ class OAuthBrowserSessionTests(unittest.TestCase):
         self.assert_rejected(self.callback(state))
 
     def test_both_public_hostnames_can_complete_their_own_login(self):
-        for origin in (self.ORIGIN, "https://www.ataripettingzoo.com"):
+        for origin in self.ORIGINS:
             with self.subTest(origin=origin):
                 client = self.app.test_client()
                 state = self.start_login(client=client, origin=origin)
@@ -240,7 +241,7 @@ class OAuthBrowserSessionTests(unittest.TestCase):
         self.assert_rejected(self.client.get("/auth", base_url=self.ORIGIN))
 
     def test_logout_without_session_identifies_client_on_both_hostnames(self):
-        for origin in (self.ORIGIN, "https://www.ataripettingzoo.com"):
+        for origin in self.ORIGINS:
             with self.subTest(origin=origin):
                 client = self.app.test_client()
                 response = client.get("/logout", base_url=origin)
@@ -257,7 +258,7 @@ class OAuthBrowserSessionTests(unittest.TestCase):
                 })
 
     def test_logout_clears_session_sends_id_token_and_allows_second_login(self):
-        for origin in (self.ORIGIN, "https://www.ataripettingzoo.com"):
+        for origin in self.ORIGINS:
             with self.subTest(origin=origin):
                 client = self.app.test_client()
                 state = self.start_login(client=client, origin=origin)
@@ -282,6 +283,46 @@ class OAuthBrowserSessionTests(unittest.TestCase):
                 next_state = self.start_login(client=client, origin=origin)
                 self.assertNotEqual(next_state, state)
                 self.assertEqual(self.callback(next_state, client=client, origin=origin).status_code, 302)
+
+
+    def test_ready_allows_landing_origins_and_checks_keycloak_without_login(self):
+        issuer = "https://auth.example.invalid/realms/test"
+        reply = Mock(status_code=200)
+        reply.json.return_value = {"issuer": issuer}
+        with patch("requests.get", return_value=reply) as get:
+            for origin in (
+                "https://ataripettingzoo.com",
+                "https://www.ataripettingzoo.com",
+                "https://white-sand-038397c0f.8.azurestaticapps.net",
+            ):
+                with self.subTest(origin=origin):
+                    response = self.client.get("/ready", base_url="https://play.ataripettingzoo.com", headers={"Origin": origin})
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual(response.get_json(), {"app_ready": True, "auth_ready": True, "ready": True})
+                    self.assertEqual(response.headers["Access-Control-Allow-Origin"], origin)
+                    self.assertIn("Origin", response.vary)
+                    self.assertEqual(response.headers["Cache-Control"], "no-store")
+                    self.assertNotIn("Set-Cookie", response.headers)
+            get.assert_called_with(issuer + "/.well-known/openid-configuration", timeout=(3, 5), allow_redirects=False, headers={"Cache-Control": "no-cache"})
+
+    def test_ready_rejects_unlisted_origins(self):
+        reply = Mock(status_code=200)
+        reply.json.return_value = {"issuer": "https://auth.example.invalid/realms/test"}
+        with patch("requests.get", return_value=reply):
+            for origin in ("https://www.ataripettingzoo.com.evil.invalid", "null", None):
+                with self.subTest(origin=origin):
+                    response = self.client.get("/ready", headers={"Origin": origin} if origin else {})
+                    self.assertNotIn("Access-Control-Allow-Origin", response.headers)
+                    self.assertIn("Origin", response.vary)
+
+    def test_keycloak_startup_failure_is_readable_by_landing_page(self):
+        origin = "https://ataripettingzoo.com"
+        with patch("requests.get", side_effect=requests.Timeout):
+            response = self.client.get("/ready", headers={"Origin": origin})
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json(), {"app_ready": True, "auth_ready": False, "ready": False})
+        self.assertEqual(response.headers["Access-Control-Allow-Origin"], origin)
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
 
 
 if __name__ == "__main__":
