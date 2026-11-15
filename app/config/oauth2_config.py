@@ -171,6 +171,40 @@ def logout():
         logout_params['id_token_hint'] = id_token
     return redirect(f"{OAUTH2_LOGOUT_URL}?{urlencode(logout_params)}")
 
+@app.route('/ready')
+def ready():
+    issuer = (
+        f"{OAUTH2_SERVER_URL.rstrip('/')}/realms/{OAUTH2_REALM}"
+    )
+    auth_ready = False
+
+    try:
+        result = requests.get(
+            f"{issuer}/.well-known/openid-configuration",
+            timeout=(3, 5),
+            allow_redirects=False,
+            headers={"Cache-Control": "no-cache"},
+        )
+        if result.status_code == 200:
+            metadata = result.json()
+            auth_ready = (
+                isinstance(metadata, dict)
+                and metadata.get("issuer") == issuer
+            )
+    except (requests.RequestException, ValueError):
+        pass
+
+    response = jsonify(
+        app_ready=True,
+        auth_ready=auth_ready,
+        ready=auth_ready,
+    )
+    response.status_code = 200 if auth_ready else 503
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Access-Control-Allow-Origin"] = (
+        "https://white-sand-038397c0f.8.azurestaticapps.net"
+    )
+    return response
 
 @app.route('/login')
 def login():
