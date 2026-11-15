@@ -216,7 +216,18 @@ def ready():
 def login():
     session['next'] = request.args.get('next', url_for('index'))
     redirect_uri = url_for('auth', _external=True)
-    return oauth.api.authorize_redirect(redirect_uri=redirect_uri)
+    try:
+        return oauth.api.authorize_redirect(redirect_uri=redirect_uri)
+    except requests.RequestException as error:
+        upstream_status = getattr(error.response, 'status_code', None)
+        app.logger.warning(
+            "Sign-in service unavailable: error=%s upstream_status=%s",
+            type(error).__name__, upstream_status,
+        )
+        return render_template(
+            'auth_starting.html',
+            retry_url=url_for('login', next=session['next']),
+        ), 503, {'Retry-After': '5'}
 
 
 @app.after_request

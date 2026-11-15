@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Starting sign-in | Atari Petting Zoo</title>
+    <link rel="icon" href="data:,">
+    <style>
+        body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+            background: #10251b; color: #eaf3d8; font-family: Arial, sans-serif; }
+        main { max-width: 640px; padding: 24px; }
+        p { line-height: 1.6; }
+        a { display: inline-block; padding: 14px 24px; background: #c8e6a0;
+            color: #10251b; border-radius: 8px; text-decoration: none; }
+        a:focus-visible { outline: 3px solid white; outline-offset: 5px; }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>Waiting for sign-in</h1>
+        <p id="startup-status" role="status" aria-live="polite">The sign-in service is temporarily unavailable. It may still be starting. Checking again…</p>
+        <a id="retry-login" href="{{ retry_url }}">Try signing in again</a>
+        <noscript><p>Please wait a moment, then try signing in again.</p></noscript>
+    </main>
+    <script>
+        (async () => {
+            const status = document.getElementById('startup-status');
+            const deadline = Date.now() + 180000;
+            while (Date.now() < deadline) {
+                try {
+                    const response = await fetch({{ url_for('ready') | tojson }}, {
+                        cache: 'no-store', credentials: 'omit',
+                        signal: AbortSignal.timeout(8000)
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.ready === true && data.auth_ready === true && data.app_ready === true) {
+                            status.textContent = 'The sign-in service is ready. You can continue now.';
+                            document.getElementById('retry-login').textContent = 'Continue to sign-in';
+                            return;
+                        }
+                    }
+                } catch {
+                    // A timeout or connection failure can occur during startup.
+                }
+                await new Promise(resolve => setTimeout(resolve, 3000));
+            }
+            status.textContent = 'The sign-in service is still unavailable. Please try again shortly.';
+        })();
+    </script>
+</body>
+</html>

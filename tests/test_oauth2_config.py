@@ -205,6 +205,28 @@ class OAuthBrowserSessionTests(unittest.TestCase):
         self.userinfo.reset_mock()
         self.assert_rejected(self.callback(state))
 
+    def test_login_outage_offers_recovery_and_preserves_destination(self):
+        unavailable = requests.Response()
+        unavailable.status_code = 503
+        for error in (requests.HTTPError(response=unavailable), requests.Timeout()):
+            with self.subTest(error=type(error).__name__):
+                self.load_server_metadata.side_effect = error
+                response = self.client.get('/login?next=/play', base_url=self.ORIGIN)
+                self.assertEqual(response.status_code, 503)
+                self.assertEqual(response.headers['Cache-Control'], 'no-store')
+                self.assertEqual(response.headers['Retry-After'], '5')
+                self.assertIn(b'Waiting for sign-in', response.data)
+                self.assertIn(b'/login?next=/play', response.data)
+                self.assertIn(b'/ready', response.data)
+                self.assertNotIn('Location', response.headers)
+                self.fetch_access_token.assert_not_called()
+                self.load_server_metadata.side_effect = None
+                state = self.start_login()
+                recovered = self.callback(state)
+                self.assertEqual(recovered.status_code, 302)
+                self.assertEqual(recovered.location, '/play')
+                self.fetch_access_token.reset_mock()
+
     def test_missing_cookie_is_rejected_without_token_exchange(self):
         state = self.start_login()
         with self.assertLogs(self.app.logger, level="WARNING") as logs:
