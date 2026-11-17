@@ -18,6 +18,13 @@ let joystick = null;
 let joystickDirection = null;
 let actionPointerId = null;
 const SEND_INTERVAL_MS = 50;
+// Reuse each game's existing numpad/action mappings for laptop keyboards.
+const KEY_ALIASES = new Map([
+    ['q', '7'], ['w', '8'], ['e', '9'],
+    ['a', '4'], ['d', '6'],
+    ['z', '1'], ['x', '2'], ['c', '3'],
+    [' ', 's'],
+]);
 
 // Prevent native dragging, selection, and long-press menus on game controls.
 const gameWrapper = document.getElementById('game-wrapper');
@@ -55,12 +62,12 @@ function handleKeydown(e) {
         e.preventDefault();
     }
     const sizeBefore = pressedKeys.size;
-    pressedKeys.add(e.key);
+    pressedKeys.add(e.key.toLowerCase());
     if (pressedKeys.size !== sizeBefore) lastSendTime = 0;
 }
 
 function handleKeyup(e) {
-    const removed = pressedKeys.delete(e.key);
+    const removed = pressedKeys.delete(e.key.toLowerCase());
     if (removed) lastSendTime = 0;
 }
 
@@ -151,7 +158,7 @@ function sendInputIfChanged() {
     const keysArray = [...new Set([
         ...(actionPointerId !== null ? ['s'] : []),
         ...(joystickDirection ? [joystickDirection] : []),
-        ...pressedKeys,
+        ...[...pressedKeys].map(key => KEY_ALIASES.get(key) ?? key),
     ])];
     const keyState = keysArray.join(',');
     if (keyState !== lastSentKeys) {

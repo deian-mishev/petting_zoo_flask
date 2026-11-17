@@ -266,14 +266,28 @@
         }
 
         .controls-row .key {
-            width: 36px;
+            min-width: 36px;
+            padding: 0 8px;
             flex-shrink: 0;
         }
 
         .keyboard-controls {
             display: flex;
-            gap: 24px;
+            gap: 12px 24px;
             flex-wrap: wrap;
+        }
+
+        .key-layout-label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 12px;
+            color: #c8e6a0;
+        }
+
+        .keyboard-help {
+            flex-basis: 100%;
+            font-size: 12px;
+            color: #ccc;
         }
 
         #touch-controls {
@@ -344,19 +358,26 @@
             <p>Controls</p>
             <div class="keyboard-controls">
                 <div>
-                    <div class="key-grid">
-                        <div class="key">↖</div><div class="key">↑</div><div class="key">↗</div>
-                        <div class="key">←</div><div class="key empty"></div><div class="key">→</div>
-                        <div class="key">↙</div><div class="key">↓</div><div class="key">↘</div>
+                    <b class="key-layout-label">Letter keys — move</b>
+                    <div class="key-grid" aria-label="Letter movement keys">
+                        <div class="key">Q ↖</div><div class="key">W ↑</div><div class="key">E ↗</div>
+                        <div class="key">A ←</div><div class="key empty"></div><div class="key">D →</div>
+                        <div class="key">Z ↙</div><div class="key">X ↓</div><div class="key">C ↘</div>
                     </div>
                 </div>
-                <div style="display: flex; flex-direction: column; gap: 5px; justify-content: center; font-size: 12px; color: #ccc;">
-                    <span><b style="color:#e8e8e8;">Numpad</b> — move (Num Lock on)</span>
-                    <span>Available directions depend on the game</span>
-                    <span><b style="color:#e8e8e8;">S</b> — fire / action (varies by game)</span>
-                    <div class="controls-row">
-                        <div class="key">0</div><span>— idle (no-op)</span>
+                <div>
+                    <b class="key-layout-label">Or numpad — Num Lock on</b>
+                    <div class="key-grid" aria-label="Numpad movement keys">
+                        <div class="key">7 ↖</div><div class="key">8 ↑</div><div class="key">9 ↗</div>
+                        <div class="key">4 ←</div><div class="key empty"></div><div class="key">6 →</div>
+                        <div class="key">1 ↙</div><div class="key">2 ↓</div><div class="key">3 ↘</div>
                     </div>
+                </div>
+                <div class="keyboard-help">
+                    <div class="controls-row">
+                        <span class="key">Space</span><span>or</span><span class="key">S</span><span>— fire / action</span>
+                    </div>
+                    <div class="controls-row">Release all keys to idle. Directions and actions vary by game.</div>
                 </div>
             </div>
             <div id="touch-controls">

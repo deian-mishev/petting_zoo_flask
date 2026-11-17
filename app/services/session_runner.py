@@ -8,6 +8,7 @@ from app.services.rendering_service import render_frame
 from app.services.ml_service import ml_service
 from app.config.env_config import INACTIVITY_TO, INPUT_TIMEOUT, REWARD_NEG_FACTO, REWARD_POS_FACTOR
 from app.services.session import cleanup_session
+from app.services.training_metrics import TrainingMetrics
 from app.config.player_state import Experience, PlayerType
 
 class SessionRunner:
@@ -81,19 +82,35 @@ class SessionRunner:
         self._running_thread.start()
 
     def _run_training(self, max_episodes: int = 1):
+        metrics = TrainingMetrics(self.session.env_config.name)
+        try:
+            self._run_training_episodes(max_episodes, metrics)
+        finally:
+            metrics.close()
+            cleanup_session(self.sid, False)
+
+    def _run_training_episodes(self, max_episodes, metrics):
+        environment_steps = 0
+        agent_names = {id(agent): name for name, agent in self.session.agents.items()}
         for episode in range(max_episodes):
             if self._should_stop():
                 break
+            for agent in self.session.agents.values():
+                agent.total_reward = 0
+            shaped_rewards = {name: 0.0 for name in self.session.agents}
+            episode_epsilon = self.session.env_config.epsilon
+            started = time.monotonic()
             self.session.env.reset()
             self.session.agent_iter = iter(self.session.env.agent_iter())
             self.session.current_agent = self.session.agents[next(self.session.agent_iter)]
             done = False
-            steps = 1
+            steps = 0
             while not done and not self._should_stop():
                 try:
                     agent_in_turn, done, reward, observation = self.set_agent_in_turn_and_current_experience()
                     agent_in_turn.total_reward += reward
                     reward = self.augment_reward(reward)
+                    shaped_rewards[agent_names[id(agent_in_turn)]] += reward
 
                     q_values = agent_in_turn.q_network(
                         tf.expand_dims(observation, 0))
@@ -111,23 +128,35 @@ class SessionRunner:
 
                     if done:
                         self.end_episode(observation)
-                        ml_service.train_model(self.sid, self.session)
+                        ml_service.train_model(self.sid, self.session, metrics=metrics)
+                        for name, agent in self.session.agents.items():
+                            metrics.scalar(f"episode/{name}/reward", agent.total_reward, episode + 1)
+                            metrics.scalar(f"episode/{name}/shaped_reward", shaped_rewards[name], episode + 1)
+                            metrics.scalar(f"episode/{name}/replay_size", len(agent.memory_buffer), episode + 1)
+                            metrics.scalar(f"episode/{name}/training_updates", metrics.updates[name], episode + 1)
+                        metrics.scalar("episode/epsilon", episode_epsilon, episode + 1)
+                        metrics.scalar("episode/length", steps, episode + 1)
+                        metrics.scalar("episode/duration_seconds", time.monotonic() - started, episode + 1)
+                        metrics.scalar("progress/environment_steps", environment_steps, episode + 1)
+                        metrics.scalar("progress/completed_episodes", episode + 1, environment_steps)
+                        metrics.flush()
                         break
 
                     self.session.env.step(action)
+                    steps += 1
+                    environment_steps += 1
                     self.session.current_agent = self.session.agents[next(
                         self.session.agent_iter)]
                     if steps % 2000 == 0:
                         app.logger.info(
                             f"{self.sid}: Training for episode {episode + 1} still in session...")
-                    steps += 1
                     time.sleep(0)
                 except Exception as e:
                     app.logger.error(f"{self.sid}: Error in game loop: {e}")
 
-            app.logger.info(
-                f"{self.sid}: Episode {episode + 1}/{max_episodes} completed.")
-        cleanup_session(self.sid, False)
+            if done:
+                app.logger.info(
+                    f"{self.sid}: Episode {episode + 1}/{max_episodes} completed.")
 
     def end_episode(self, last_observation):
         for agent in self.session.agents.values():

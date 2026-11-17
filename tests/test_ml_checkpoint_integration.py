@@ -22,6 +22,28 @@ with patch.dict(os.environ, {"ENV": "DEV"}):
 
 
 class MLCheckpointIntegrationTests(unittest.TestCase):
+    def test_training_step_returns_loss_after_updating_weights(self):
+        model = tf.keras.Sequential([
+            tf.keras.layers.Input(shape=(2,)),
+            tf.keras.layers.Dense(2, kernel_initializer="zeros", bias_initializer="zeros"),
+        ])
+        target = tf.keras.models.clone_model(model)
+        optimizer = tf.keras.optimizers.Adam(learning_rate=0.01)
+        optimizer.build(model.trainable_variables)
+        agent = SimpleNamespace(memory_buffer=[], q_network=model,
+                                target_q_network=target, optimizer=optimizer)
+        self.assertIsNone(ml_service.train_step(agent))
+        agent.memory_buffer = [None] * 128
+        experiences = (tf.ones((128, 2)), tf.zeros((128,), dtype=tf.int32),
+                       tf.ones((128,)), tf.ones((128, 2)), tf.ones((128,)))
+        before = [weight.copy() for weight in model.get_weights()]
+        with patch.object(ml_service, "get_experiences", return_value=experiences):
+            loss = ml_service.train_step(agent)
+        self.assertAlmostEqual(float(loss), 1.0)
+        self.assertEqual(int(optimizer.iterations), 1)
+        self.assertTrue(any(not np.array_equal(old, new)
+                            for old, new in zip(before, model.get_weights())))
+
     def setUp(self):
         environment = patch.dict(os.environ, {"MODEL_CHECKPOINT_BACKEND": "local", "CONTAINER_APP_NAME": ""})
         environment.start()

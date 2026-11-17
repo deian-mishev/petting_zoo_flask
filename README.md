@@ -149,6 +149,21 @@ During gameplay, the display scales down proportionally when needed to leave
 room for the controls without scrolling. It never enlarges beyond the configured
 size, and keeps the configured width-to-height ratio.
 
+### Desktop and laptop controls
+
+Use either layout for movement (available directions depend on the game):
+
+```text
+Letter keys          Numpad (Num Lock on)
+Q ↖  W ↑  E ↗        7 ↖  8 ↑  9 ↗
+A ←       D →        4 ←       6 →
+Z ↙  X ↓  C ↘        1 ↙  2 ↓  3 ↘
+```
+
+Press **Space** or **S** for fire/action, depending on the game. Release all keys
+to idle. Letter keys work with Shift or Caps Lock, and use the same game-specific
+actions as the corresponding numpad keys. Touch devices have a joystick and action button.
+
 
 ### Model checkpoints
 
@@ -312,6 +327,60 @@ The realm import at `local_test/keycloak/realm-export.json` seeds the following 
 | Redirect URI  | `http://localhost:5001/*`    |
 | Roles         | `User`, `Admin`              |
 | Demo users    | `admin / admin123` (User + Admin), `player / player123` (User) |
+
+### TensorBoard training dashboard
+
+TensorBoard is already included in `requirements.txt`. To log autonomous training
+started through `POST /train`, add the following to `.env` and restart Flask:
+
+```env
+TENSORBOARD_ENABLED=true
+TENSORBOARD_LOG_DIR=logs/tensorboard
+```
+
+In another terminal, activate the same Python environment and run from the project root:
+
+```sh
+python -m tensorboard.main --logdir logs/tensorboard --host 127.0.0.1 --port 6006
+```
+
+Open http://localhost:6006, then start training using the existing admin API.
+Each training session writes a unique run under
+`logs/tensorboard/<environment>/<UTC timestamp>_<random ID>/`.
+Select a run in **Time Series** or **Scalars**; use smoothing to inspect reward trends.
+
+| Chart | Horizontal axis | Meaning |
+|-------|-----------------|---------|
+| `train/<player>/loss` | Successful updates for that player in this run | DQN minibatch MSE before the update |
+| `episode/<player>/reward` | Completed episodes | Original rewards collected by the training loop; reset each episode |
+| `episode/<player>/shaped_reward` | Completed episodes | Rewards after the configured multipliers and inactivity penalty |
+| `episode/<player>/replay_size` | Completed episodes | Experiences currently available for replay |
+| `episode/<player>/training_updates` | Completed episodes | Cumulative successful updates for that player in this run |
+| `episode/epsilon` | Completed episodes | Exploration rate at the start of the episode |
+| `episode/length`, `episode/duration_seconds` | Completed episodes | Environment action count and elapsed time including training/saving |
+| `progress/environment_steps` | Completed episodes | Cumulative environment actions in this run |
+| `progress/completed_episodes` | Environment actions | Completed episode count |
+
+Summaries are flushed after each completed episode and closed when training stops
+or exits. Long episodes therefore take time to appear. Loss only appears once a
+player has at least `MINIBATCH_SIZE` replay experiences. Interrupted episodes do not
+produce completed-episode metrics. Logging failures are reported without stopping
+training. Set `TENSORBOARD_ENABLED=false` to disable logging.
+
+These are training metrics, not independent evaluation results or proof that a
+checkpoint was published. Existing application logs report checkpoint publication
+and stale-update rejection. Human gameplay sessions are not logged to TensorBoard.
+For model quality comparisons, evaluate saved models separately against consistent
+opponents with exploration and learning disabled; lower training loss alone does
+not establish better gameplay.
+
+For Azure/container training, set `TENSORBOARD_LOG_DIR` to a persistent writable
+volume and point TensorBoard at the same event files (or download them locally).
+Files in an ephemeral container disappear when it is replaced. Existing Blob
+model checkpoints do not automatically store TensorBoard event files. This change
+does not create a hosted TensorBoard service. See the
+[TensorFlow custom-loop guide](https://www.tensorflow.org/tensorboard/get_started#using_tensorboard_with_other_methods)
+for the summary API used here.
 
 ## API Reference
 

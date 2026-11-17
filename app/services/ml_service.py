@@ -32,7 +32,7 @@ class MLService:
             cls._instance._initialized = False
         return cls._instance
 
-    def train_model(self, sid, session: SessionState):
+    def train_model(self, sid, session: SessionState, metrics=None):
         shared_models = {}
         for agent_name, agent_state in session.agents.items():
             with agent_state.lock:
@@ -41,12 +41,16 @@ class MLService:
               
                 if agent_state.type in [PlayerType.HUMAN, PlayerType.ATARI_PRO]:
                     for _ in range(10):
-                        ml_service.train_step(agent_state, session.env_config.name)
+                        loss = ml_service.train_step(agent_state, session.env_config.name)
+                        if metrics is not None:
+                            metrics.update(agent_name, loss)
                     shared_models["ATARI_PRO"] = agent_state
                 else:
                     save_key = agent_state.type.name
                     for _ in range(10):
-                        ml_service.train_step(agent_state)
+                        loss = ml_service.train_step(agent_state)
+                        if metrics is not None:
+                            metrics.update(agent_name, loss)
                     shared_models[agent_state.type.name] = agent_state
 
             with session.env_config.lock:
@@ -86,7 +90,7 @@ class MLService:
             return
         experiences = self.get_experiences(
             current_agent.memory_buffer, MINIBATCH_SIZE)
-        self.agent_learn(
+        return self.agent_learn(
             experiences,
             GAMMA,
             current_agent.target_q_network,
@@ -233,6 +237,7 @@ class MLService:
         optimizer.apply_gradients(
             zip(gradients, q_network.trainable_variables))
         self.update_target_network(q_network, target_q_network)
+        return loss
 
     def get_action(self, q_values, epsilon, num_actions=4):
         """
