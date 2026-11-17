@@ -149,6 +149,35 @@ During gameplay, the display scales down proportionally when needed to leave
 room for the controls without scrolling. It never enlarges beyond the configured
 size, and keeps the configured width-to-height ratio.
 
+Gameplay images are delivered at **30 FPS maximum** by default, independently of
+game steps and keyboard/touch input. Encoding is skipped between frame deadlines
+and while three frames await browser acknowledgement. The next available slot
+captures the current game state; skipped snapshots are never queued. The browser
+decodes a replacement before displaying it and discards older frames that finish
+decoding late, keeping the last good image visible.
+
+Optional settings (also available as Azure Container App environment variables):
+
+| Variable | Default | Range | Purpose |
+|----------|---------|-------|---------|
+| `STREAM_FPS` | `30` | 1–60 | Maximum image delivery rate; does not change `INPUT_TIMEOUT` |
+| `STREAM_JPEG_QUALITY` | `75` | 1–100 | JPEG quality; try 60 to reduce bytes and compare clarity |
+| `STREAM_MAX_IN_FLIGHT` | `3` | 1–6 | Maximum unacknowledged frames per viewer |
+
+Invalid non-integer values use the defaults; out-of-range integers are clamped.
+The three-frame window permits pipelining (about 100 ms of acknowledgement latency
+at 30 FPS). Higher latency or slower decoding can lower the delivered frame rate;
+game actions continue without waiting for acknowledgements. Increasing the window
+can improve throughput on high-latency links but allows more stale frames in transit.
+JPEG quality remains 75 until explicitly changed. Display width/height settings
+only affect browser sizing, not encoded image dimensions.
+
+Socket.IO retains polling-to-WebSocket upgrade and polling fallback. The browser
+console reports `Game transport:` and `Game transport upgraded:` so the actual
+transport can be checked after deployment. Reload existing browser tabs to enable
+acknowledgements: older clients still receive paced frames without the new window.
+Run the browser logic regression checks with `node --test tests/test_streaming_client.cjs`.
+
 ### Desktop and laptop controls
 
 Use either layout for movement (available directions depend on the game):
@@ -469,7 +498,7 @@ The server runs Flask-SocketIO in **threading** mode:
 - Each active game session runs in its own `threading.Thread` spawned by `SessionRunner`.
 - A `threading.Lock` guards the global session map and each regular model's training and save operations; sessions and Atari Pro use Eventlet semaphores.
 - Sessions can load separate model copies. Checkpoint publication protects file pairs from partial saves, but does not merge simultaneous training updates.
-- Frame delivery targets ~143 FPS (`INPUT_TIMEOUT = 0.007 s`).
+- Gameplay pauses 7 ms between agent turns (`INPUT_TIMEOUT = 0.007 s`), in addition to processing time; image delivery is separately capped at 30 FPS by default.
 
 ## Logging
 

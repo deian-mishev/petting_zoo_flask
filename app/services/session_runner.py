@@ -5,6 +5,7 @@ from flask_socketio import SocketIO
 from app import app
 from app.config.session_state import SessionState
 from app.services.rendering_service import render_frame
+from app.services.frame_delivery import FrameDelivery
 from app.services.ml_service import ml_service
 from app.config.env_config import INACTIVITY_TO, INPUT_TIMEOUT, REWARD_NEG_FACTO, REWARD_POS_FACTOR
 from app.services.session import cleanup_session
@@ -12,12 +13,16 @@ from app.services.training_metrics import TrainingMetrics
 from app.config.player_state import Experience, PlayerType
 
 class SessionRunner:
-    def __init__(self, sid: str, session: SessionState, socketio: SocketIO):
+    def __init__(self, sid: str, session: SessionState, socketio: SocketIO, *, frame_ack=False):
         self.sid = sid
         self.session = session
         self.socketio = socketio
         self._stop_event = threading.Event()
         self._running_thread = None
+        self._frames = FrameDelivery(
+            lambda frame, **kwargs: self.socketio.emit('frame', frame, room=self.sid, **kwargs),
+            require_ack=frame_ack,
+        )
 
     def start(self):
         self._running_thread = threading.Thread(target=self._run_loop, daemon=True)
@@ -66,8 +71,7 @@ class SessionRunner:
                 self.session.current_agent = self.session.agents[next(
                     self.session.agent_iter)]
 
-                frame = render_frame(self.session)
-                self.socketio.emit('frame', frame, room=self.sid)
+                self._frames.send_if_due(lambda: render_frame(self.session))
 
             except Exception as e:
                 app.logger.error(f"{self.sid}: Error emitting frame: {e}")

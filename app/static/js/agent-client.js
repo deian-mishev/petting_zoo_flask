@@ -1,4 +1,5 @@
 const vid = document.getElementById('video');
+const framePlayer = new FramePlayer(vid);
 const pressedKeys = new Set();
 const title = document.getElementById('title');
 const envSelect = document.getElementById('envSelect');
@@ -168,6 +169,7 @@ function sendInputIfChanged() {
 }
 
 function gameLoop(timestamp) {
+    if (!isConnected) return;
     if (timestamp - lastSendTime >= SEND_INTERVAL_MS) {
         sendInputIfChanged();
         lastSendTime = timestamp;
@@ -193,6 +195,7 @@ function cleanup() {
     }
     clearInputs();
     lastSentKeys = '';
+    framePlayer.reset();
 
     previousSocket?.disconnect();
     title.textContent = "Episode ended, play again ..";
@@ -274,7 +277,8 @@ startBtn.addEventListener("click", () => {
     socket = io({
         query: {
             env: environment,
-            players: JSON.stringify(players)
+            players: JSON.stringify(players),
+            frame_ack: '1',
         },
         transports: ['polling', 'websocket']
     });
@@ -286,6 +290,9 @@ startBtn.addEventListener("click", () => {
             vid.style.display = 'block';
             controls.style.display = 'block';
             isConnected = true;
+            const engine = socket.io.engine;
+            console.info('Game transport:', engine.transport.name);
+            engine.once('upgrade', transport => console.info('Game transport upgraded:', transport.name));
             window.getSelection()?.removeAllRanges();
             document.documentElement.classList.add('playing');
             window.scrollTo(0, 0);
@@ -295,7 +302,7 @@ startBtn.addEventListener("click", () => {
 
             document.addEventListener("keydown", handleKeydown);
             document.addEventListener("keyup", handleKeyup);
-            requestAnimationFrame(gameLoop);
+            animationFrameId = requestAnimationFrame(gameLoop);
         }
     );
 
@@ -305,12 +312,13 @@ startBtn.addEventListener("click", () => {
         title.textContent = "Game could not start. Please try again later.";
     });
 
-    socket.on("frame", (frameBytes) => {
-        const blob = new Blob([frameBytes], { type: 'image/jpeg' });
-        const url = URL.createObjectURL(blob);
-        const prev = vid.src;
-        vid.src = url;
-        if (prev) URL.revokeObjectURL(prev);
+    const frameSocket = socket;
+    socket.on("frame", (frameBytes, acknowledge) => {
+        if (socket !== frameSocket || !isConnected) {
+            if (typeof acknowledge === 'function') acknowledge();
+            return;
+        }
+        framePlayer.receive(frameBytes, acknowledge);
     });
 
     socket.on("episode_end", cleanup);

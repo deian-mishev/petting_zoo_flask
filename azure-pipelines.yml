@@ -16,6 +16,14 @@ pool:
 
 steps:
   - checkout: self
+  - task: NodeTool@0
+    inputs:
+      versionSpec: '22.x'
+    displayName: Select Node.js for browser logic tests
+
+  - script: node --test tests/test_streaming_client.cjs
+    displayName: Test frame playback and keyboard/touch input
+
   - script: |
       docker build -t petting-zoo-web:$(Build.BuildId) .
     displayName: Build Flask image

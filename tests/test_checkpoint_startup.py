@@ -115,6 +115,16 @@ class CheckpointStartupTests(unittest.TestCase):
         self.runner.return_value.start.assert_called_once()
         self.environment.close.assert_not_called()
         self.assertEqual(len(self.sessions), 1)
+        self.assertFalse(self.runner.call_args.kwargs["frame_ack"])
+        client.disconnect()
+
+    def test_current_browser_negotiates_frame_acknowledgements(self):
+        client = self.socketio.test_client(
+            self.app, flask_test_client=self.client,
+            query_string="env=Boxing&players={}&frame_ack=1",
+        )
+        self.assertTrue(client.is_connected())
+        self.assertTrue(self.runner.call_args.kwargs["frame_ack"])
         client.disconnect()
 
     def test_training_storage_failure_returns_503_and_does_not_start_runner(self):

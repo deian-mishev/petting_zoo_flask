@@ -99,6 +99,8 @@ class RunnerMetricsTests(unittest.TestCase):
             "flask_socketio": module(SocketIO=object),
             "app.config.session_state": module(SessionState=object),
             "app.services.rendering_service": module(render_frame=Mock()),
+            "app.services.frame_delivery": module(
+                FrameDelivery=runpy.run_path(str(ROOT / "app/services/frame_delivery.py"))["FrameDelivery"]),
             "app.services.ml_service": module(ml_service=self.service),
             "app.config.env_config": module(INACTIVITY_TO=-1, INPUT_TIMEOUT=0,
                                              REWARD_NEG_FACTO=3, REWARD_POS_FACTOR=5),

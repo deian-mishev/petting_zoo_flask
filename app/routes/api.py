@@ -76,7 +76,7 @@ def on_connect(auth=None):
         client_sessions[sid] = session_state
 
     session_state.runner = SessionRunner(
-        sid, session_state, socketio)
+        sid, session_state, socketio, frame_ack=request.args.get('frame_ack') == '1')
     session_state.runner.start()
 
 
