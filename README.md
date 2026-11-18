@@ -138,6 +138,7 @@ OAUTH2_SERVER_URL=http://localhost:8080
 OAUTH2_REALM=petting-zoo
 OAUTH2_CLIENT_ID=petting-zoo-client
 OAUTH2_CLIENT_SECRET=dev-secret-change-in-prod
+OAUTH2_POST_LOGOUT_REDIRECT_URI=
 
 # Atari Pro multi-head model (optional — leave blank to skip loading)
 ATTARI_PRO_MODEL=
@@ -178,6 +179,15 @@ transport can be checked after deployment. Reload existing browser tabs to enabl
 acknowledgements: older clients still receive paced frames without the new window.
 Run the browser logic regression checks with `node --test tests/test_streaming_client.cjs`.
 
+To measure frame capture, RGB-to-BGR conversion, JPEG encoding time, and payload
+size at qualities 60/75/90 locally, run
+`python scripts/benchmark_rendering.py --game boxing_v2 --frames 300`.
+This steps the emulator without loading or saving models. It excludes inference,
+network overhead, and browser decoding; use the results to tune `STREAM_FPS` and
+`STREAM_JPEG_QUALITY` for your hardware. Frames retain their original dimensions;
+display scaling happens in the browser. RGB is converted to OpenCV's BGR order
+before encoding so red and blue are displayed correctly.
+
 ### Desktop and laptop controls
 
 Use either layout for movement (available directions depend on the game):
@@ -189,9 +199,14 @@ A ←       D →        4 ←       6 →
 Z ↙  X ↓  C ↘        1 ↙  2 ↓  3 ↘
 ```
 
-Press **Space** or **S** for fire/action, depending on the game. Release all keys
-to idle. Letter keys work with Shift or Caps Lock, and use the same game-specific
-actions as the corresponding numpad keys. Touch devices have a joystick and action button.
+Press **Space** or **S** for fire/action, depending on the game. Hold movement and
+fire together, or combine two directions for a diagonal. Arrow keys also work.
+Letter keys work with Shift or Caps Lock. Touch devices can hold the joystick
+and action button simultaneously. Releasing either input preserves the other;
+opposing directions cancel. The server selects from the running game's actual
+minimal action set, keeping existing model output sizes unchanged. Unsupported
+combinations retain the supported requested buttons, preferring movement on ties.
+Releasing all keys selects idle where supported (Wizard of Wor has no idle action).
 
 
 ### Model checkpoints
@@ -313,7 +328,59 @@ Validate model behavior separately; rollback targets are not a substitute for
 independent disaster recovery, and checksums do not prevent bad training or
 unauthorized modifications.
 
+For production logout to return to the separate landing site, set
+`OAUTH2_POST_LOGOUT_REDIRECT_URI=https://www.ataripettingzoo.com/` in Azure.
+Leave it unset or blank locally to return to the app homepage (for example,
+`http://localhost:5001/`). Allow the exact destination in the Keycloak client's
+valid post-logout redirect URIs, then restart the app after changing the setting.
+
 ## Running
+
+Use Python **3.11** for the pinned dependencies, matching the Docker image.
+The local Keycloak client expects Flask at `http://localhost:5001`.
+Keep your existing `.env`; set `FLASK_RUN_PORT=5001`,
+`MODEL_CHECKPOINT_BACKEND=local`, and `OAUTH2_SERVER_URL=http://localhost:8080`.
+Keep `MONGO_ENABLED=false` if you do not need MongoDB locally.
+
+From the project root in Linux/WSL, with Docker Desktop running and WSL
+integration enabled:
+
+```sh
+conda create -n petting-zoo-local python=3.11 -y
+conda activate petting-zoo-local
+python -m pip install -r requirements.txt
+AutoROM --accept-license
+docker compose -f local_test/docker-compose.yml up -d keycloak
+```
+
+Wait for `http://localhost:8080/realms/petting-zoo/.well-known/openid-configuration`
+to respond, then start Flask:
+
+```sh
+FLASK_RUN_PORT=5001 MODEL_CHECKPOINT_BACKEND=local python run.py
+```
+
+Open `http://localhost:5001` and sign in as `player` / `player123`.
+The `CONTAINER_APP_NAME` variable must be unset for local checkpoint storage.
+
+If using the shared Human / Atari Pro model locally, use project-relative paths:
+
+```env
+ATTARI_PRO_MODEL=./resources/models/keras/atari_pro.keras
+ATTARI_PRO_WEIGHTS_PATH=./resources/models/keras/atari_pro.weights.h5
+```
+
+The `/app/resources/...` paths used inside containers do not apply to a host-run
+Flask app. Restart Flask after changing `.env` so the model paths are reloaded.
+
+To preview the standalone landing page as well, use a second terminal:
+
+```sh
+python -m http.server 8000 --directory landing
+```
+
+Open `http://localhost:8000`. Its play button uses the local Flask app on port
+5001; deployed landing pages continue to use `https://play.ataripettingzoo.com`.
 
 **With Docker Compose (recommended for local dev)**
 

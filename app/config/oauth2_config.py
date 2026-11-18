@@ -16,6 +16,7 @@ OAUTH2_CLIENT_ID = os.getenv("OAUTH2_CLIENT_ID")
 OAUTH2_CLIENT_SECRET = os.getenv("OAUTH2_CLIENT_SECRET")
 OAUTH2_SERVER_URL = os.getenv("OAUTH2_SERVER_URL")
 OAUTH2_REALM = os.getenv("OAUTH2_REALM")
+OAUTH2_POST_LOGOUT_REDIRECT_URI = os.getenv("OAUTH2_POST_LOGOUT_REDIRECT_URI", "").strip()
 OAUTH2_LOGOUT_URL = f"{OAUTH2_SERVER_URL}/realms/{OAUTH2_REALM}/protocol/openid-connect/logout"
 
 OAUTH2_JWKS_URL = f"{OAUTH2_SERVER_URL}/realms/{OAUTH2_REALM}/protocol/openid-connect/certs"
@@ -162,7 +163,7 @@ def logout():
     id_token = session.get('id_token')
     session.clear()
 
-    redirect_uri = 'https://www.ataripettingzoo.com/'
+    redirect_uri = OAUTH2_POST_LOGOUT_REDIRECT_URI or url_for('index', _external=True)
     logout_params = {
         'client_id': OAUTH2_CLIENT_ID,
         'post_logout_redirect_uri': redirect_uri,

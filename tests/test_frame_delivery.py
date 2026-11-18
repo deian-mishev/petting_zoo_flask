@@ -182,11 +182,28 @@ class RenderingTests(unittest.TestCase):
 
     def test_encoding_failure_is_explicit(self):
         import cv2
+        import numpy as np
 
         renderer = self.load_renderer()
         with patch.object(cv2, "imencode", return_value=(False, None)):
             with self.assertRaisesRegex(RuntimeError, "encode gameplay frame"):
-                renderer(SimpleNamespace(env=Mock()))
+                frame = np.zeros((8, 8, 3), dtype=np.uint8)
+                renderer(SimpleNamespace(env=SimpleNamespace(render=lambda: frame)))
+
+    def test_rgb_colors_survive_jpeg_roundtrip(self):
+        import cv2
+        import numpy as np
+
+        frame = np.zeros((32, 64, 3), dtype=np.uint8)
+        frame[:, :32] = (255, 0, 0)  # RGB red
+        frame[:, 32:] = (0, 0, 255)  # RGB blue
+        renderer = self.load_renderer()
+        jpeg = renderer(SimpleNamespace(env=SimpleNamespace(render=lambda: frame)))
+        decoded_bgr = cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8), cv2.IMREAD_COLOR)
+        self.assertGreater(int(decoded_bgr[16, 8, 2]), 240)
+        self.assertLess(int(decoded_bgr[16, 8, 0]), 15)
+        self.assertGreater(int(decoded_bgr[16, 56, 0]), 240)
+        self.assertLess(int(decoded_bgr[16, 56, 2]), 15)
 
 
 if __name__ == "__main__":

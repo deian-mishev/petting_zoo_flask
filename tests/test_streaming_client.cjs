@@ -152,3 +152,13 @@ test('touch action release, joystick and visibility clearing do not wait for fra
     b.documentHandlers.visibilitychange();
     assert.deepEqual(b.emitted.at(-1).keys, []);
 });
+
+test('keyboard directions and fire are sent together and released independently', () => {
+    const b = browser();
+    b.run("handleKeydown({key: 'ArrowUp', preventDefault() {}}); handleKeydown({key: 'd'}); handleKeydown({key: ' ', preventDefault() {}}); gameLoop(100);");
+    assert.deepEqual(b.emitted.at(-1).keys, ['8', '6', 's']);
+    b.run("handleKeyup({key: ' '}); gameLoop(200);");
+    assert.deepEqual(b.emitted.at(-1).keys, ['8', '6']);
+    b.run("handleKeyup({key: 'ArrowUp'}); gameLoop(300);");
+    assert.deepEqual(b.emitted.at(-1).keys, ['6']);
+});

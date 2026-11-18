@@ -28,7 +28,7 @@ env/
 
 # TensorBoard
 runs/
-
+training-logs/
 
 # VSCode
 .vscode

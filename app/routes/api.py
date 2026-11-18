@@ -3,6 +3,7 @@ from flask import request, jsonify, session, render_template
 
 from app import app, socketio, client_sessions, client_sessions_lock
 from app.services.ml_service import ml_service
+from app.services.human_input import resolve_human_action
 from app.services.session_runner import SessionRunner
 from app.config.session_state import SessionState
 from app.config.ml_env_config import EnvironmentConfig, ENVIRONMENTS
@@ -87,13 +88,9 @@ def on_input(keys: list[str]):
         session: SessionState = client_sessions.get(sid)
         if session is not None:
             with session.lock:
-                for key in keys:
-                    action = session.env_config.KEY_MAP.get(key)
-                    if action is not None:
-                        session.next_human_action = action
-                        break
-                else:
-                    session.next_human_action = 0
+                session.next_human_action = resolve_human_action(
+                    keys, session.env.unwrapped.action_mapping
+                )
 
 
 @socketio.on('disconnect')

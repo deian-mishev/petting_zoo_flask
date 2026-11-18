@@ -88,13 +88,20 @@
   <script>
     const button = document.getElementById("play-button");
     const status = document.getElementById("startup-status");
-    const appOrigin = "https://play.ataripettingzoo.com";
+    const isLocal = ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname);
+    const appOrigin = isLocal ? "http://localhost:5001" : "https://play.ataripettingzoo.com";
 
     const sleep = milliseconds =>
       new Promise(resolve => setTimeout(resolve, milliseconds));
 
     button.addEventListener("click", async () => {
       if (button.disabled) return;
+
+      // Local development does not need the production cold-start polling flow.
+      if (isLocal) {
+        window.location.assign(`${appOrigin}/login`);
+        return;
+      }
 
       button.disabled = true;
       button.textContent = "Starting…";

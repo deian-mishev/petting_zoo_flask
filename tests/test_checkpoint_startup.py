@@ -12,6 +12,7 @@ from flask_socketio import SocketIO
 
 
 ROOT = Path(__file__).resolve().parents[1]
+resolve_human_action = runpy.run_path(str(ROOT / 'app/services/human_input.py'))['resolve_human_action']
 
 
 def module(name, **values):
@@ -51,6 +52,7 @@ class CheckpointStartupTests(unittest.TestCase):
             "app": module("app", app=self.app, socketio=self.socketio,
                           client_sessions=self.sessions, client_sessions_lock=threading.Lock()),
             "app.services.ml_service": module("ml_service", ml_service=self.service),
+            "app.services.human_input": module("human_input", resolve_human_action=resolve_human_action),
             "app.services.session_runner": module("session_runner", SessionRunner=self.runner),
             "app.config.session_state": module("session_state", SessionState=new_session),
             "app.config.player_state": module("player_state", PlayerType=PlayerType),
@@ -116,6 +118,18 @@ class CheckpointStartupTests(unittest.TestCase):
         self.environment.close.assert_not_called()
         self.assertEqual(len(self.sessions), 1)
         self.assertFalse(self.runner.call_args.kwargs["frame_ack"])
+        client.disconnect()
+
+    def test_socket_input_combines_buttons_and_releases_them_independently(self):
+        client = self.connect()
+        session = next(iter(self.sessions.values()))
+        session.lock = threading.Lock()
+        session.next_human_action = 0
+        self.environment.unwrapped.action_mapping = tuple(range(18))
+        for keys, expected in [(['s', '8', '6'], 14), (['6', 's', '8'], 14),
+                                (['6', 's'], 11), (['6'], 3), ([], 0), (None, 0)]:
+            client.emit('input', keys)
+            self.assertEqual(session.next_human_action, expected)
         client.disconnect()
 
     def test_current_browser_negotiates_frame_acknowledgements(self):

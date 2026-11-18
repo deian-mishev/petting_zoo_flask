@@ -19,15 +19,28 @@
       "serviceAccountsEnabled": false,
       "publicClient": false,
       "redirectUris": [
-        "http://localhost:5001/*"
+        "http://localhost:5001/auth"
       ],
       "webOrigins": [
         "http://localhost:5001"
       ],
       "attributes": {
-        "post.logout.redirect.uris": "http://localhost:5001/*"
+        "post.logout.redirect.uris": "http://localhost:5001/"
       },
-      "fullScopeAllowed": true
+      "fullScopeAllowed": true,
+      "protocolMappers": [
+        {
+          "name": "petting-zoo-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "petting-zoo-client",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
     }
   ],
   "roles": {

@@ -145,6 +145,7 @@ class OAuthBrowserSessionTests(unittest.TestCase):
                 "OAUTH2_SERVER_URL": "https://auth.example.invalid",
                 "OAUTH2_REALM": "test",
                 "OAUTH2_CLIENT_ID": "test-client",
+                "OAUTH2_POST_LOGOUT_REDIRECT_URI": "https://www.ataripettingzoo.com/",
             }, clear=True):
                 with patch("dotenv.load_dotenv"):
                     self.config = runpy.run_path(str(CONFIG_PATH))
@@ -261,6 +262,15 @@ class OAuthBrowserSessionTests(unittest.TestCase):
 
     def test_direct_callback_without_state_offers_retry(self):
         self.assert_rejected(self.client.get("/auth", base_url=self.ORIGIN))
+
+    def test_logout_without_configured_destination_returns_to_app_homepage(self):
+        with patch.dict(self.config["logout"].__globals__, {
+            "OAUTH2_POST_LOGOUT_REDIRECT_URI": "",
+        }):
+            response = self.client.get("/logout", base_url="http://localhost:5001")
+        self.assertEqual(response.status_code, 302)
+        params = parse_qs(urlsplit(response.location).query)
+        self.assertEqual(params["post_logout_redirect_uri"], ["http://localhost:5001/"])
 
     def test_logout_without_session_identifies_client_on_both_hostnames(self):
         for origin in self.ORIGINS:

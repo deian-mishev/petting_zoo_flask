@@ -25,6 +25,8 @@ const KEY_ALIASES = new Map([
     ['a', '4'], ['d', '6'],
     ['z', '1'], ['x', '2'], ['c', '3'],
     [' ', 's'],
+    ['arrowup', '8'], ['arrowright', '6'],
+    ['arrowdown', '2'], ['arrowleft', '4'],
 ]);
 
 // Prevent native dragging, selection, and long-press menus on game controls.
