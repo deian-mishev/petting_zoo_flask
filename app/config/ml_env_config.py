@@ -2,7 +2,6 @@ import threading
 from pettingzoo.atari import boxing_v2, space_invaders_v2, tennis_v3, double_dunk_v3, ice_hockey_v2, mario_bros_v3, pong_v3, wizard_of_wor_v3
 from dataclasses import dataclass, field
 from typing import Optional, Callable
-from app.config.env_config import EPSILON
 
 @dataclass
 class EnvironmentConfig:
@@ -13,7 +12,6 @@ class EnvironmentConfig:
     num_actions: int
     agents: list[str]
     observation_space: tuple[int, ...]
-    epsilon: float = EPSILON
     env: Optional[Callable] = field(default=None)
     lock: threading.Lock = field(default_factory=threading.Lock)
     

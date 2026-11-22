@@ -30,6 +30,7 @@ class PlayerState:
     target_q_network: tf.keras.Model = None
     optimizer: tf.keras.optimizers.Optimizer = None
     lock: eventlet.semaphore.Semaphore = None
+    training_state: dict = field(default_factory=lambda: {"schema_version": 1, "environments": {}})
     current_experience: Optional[Experience] = None
     total_reward: int = field(default=0)
     memory_buffer: Deque[Experience] = field(

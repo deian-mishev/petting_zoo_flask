@@ -12,6 +12,8 @@ from pathlib import Path
 from uuid import uuid4
 
 from app.services.model_checkpoints import (
+    load_training_state,
+    write_training_state,
     _checkpoint_files,
     _checkpoint_root,
     _next_version,
@@ -183,6 +185,10 @@ def _archive(model_file, weights_file, archive_file):
     with zipfile.ZipFile(archive_file, "w", compression=zipfile.ZIP_STORED) as archive:
         archive.write(model_file, "model.keras")
         archive.write(weights_file, "target.weights.h5")
+        state_file = Path(model_file).with_name("training_state.json")
+        if state_file.exists():
+            load_training_state(model_file)
+            archive.write(state_file, "training_state.json")
     return _digest(archive_file)
 
 
@@ -235,12 +241,15 @@ class BlobCheckpointStore:
         if _digest(archive_file) != entry["sha256"]:
             raise ValueError("Blob checkpoint checksum mismatch")
         with zipfile.ZipFile(archive_file) as archive:
-            if sorted(archive.namelist()) != ["model.keras", "target.weights.h5"]:
+            names = sorted(archive.namelist())
+            if names not in (["model.keras", "target.weights.h5"],
+                             ["model.keras", "target.weights.h5", "training_state.json"]):
                 raise ValueError("Invalid Blob checkpoint archive")
-            for name in ("model.keras", "target.weights.h5"):
+            for name in names:
                 with archive.open(name) as source, (Path(directory) / name).open("wb") as output:
                     while chunk := source.read(1024 * 1024):
                         output.write(chunk)
+        load_training_state(Path(directory) / "model.keras")
         return str(Path(directory) / "model.keras"), str(Path(directory) / "target.weights.h5")
 
     @contextmanager
@@ -277,7 +286,7 @@ class BlobCheckpointStore:
                 yield files, manifest["generation"]
                 return
 
-    def save(self, model_path, model, target_model, validate, expected_generation):
+    def save(self, model_path, model, target_model, validate, expected_generation, training_state=None):
         if not expected_generation:
             raise ValueError("A loaded Blob checkpoint generation is required to save")
         prefix = _prefix(model_path)
@@ -289,6 +298,8 @@ class BlobCheckpointStore:
             weights_file = str(Path(directory) / "target.weights.h5")
             model.save(model_file)
             target_model.save_weights(weights_file)
+            if training_state is not None:
+                write_training_state(directory, training_state)
             validate(model_file, weights_file)
             entry = self._upload_pair(prefix, "v1", model_file, weights_file, directory)
             publication_attempted = False

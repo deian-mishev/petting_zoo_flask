@@ -16,6 +16,36 @@ _RETAINED_VERSIONS = 4
 _LOGGER = logging.getLogger(__name__)
 
 
+def validate_training_state(state):
+    if (not isinstance(state, dict) or type(state.get("schema_version")) is not int
+            or state["schema_version"] != 1 or not isinstance(state.get("environments"), dict)):
+        raise ValueError("Invalid training state")
+    for name, values in state["environments"].items():
+        if not isinstance(name, str) or not isinstance(values, dict):
+            raise ValueError("Invalid environment training state")
+        epsilon = values.get("epsilon")
+        if type(epsilon) not in (int, float) or not 0 <= epsilon <= 1:
+            raise ValueError("Invalid training epsilon")
+        for key in ("completed_episodes", "environment_steps"):
+            value = values.get(key)
+            if type(value) is not int or value < 0:
+                raise ValueError(f"Invalid training counter: {key}")
+    return state
+
+
+def load_training_state(model_file):
+    path = Path(model_file).with_name("training_state.json")
+    if not path.exists():
+        return {"schema_version": 1, "environments": {}}
+    return validate_training_state(json.loads(path.read_text(encoding="utf-8")))
+
+
+def write_training_state(directory, state):
+    path = Path(directory) / "training_state.json"
+    path.write_text(json.dumps(validate_training_state(state), allow_nan=False), encoding="utf-8")
+    return path
+
+
 def _checkpoint_backend():
     backend = os.getenv("MODEL_CHECKPOINT_BACKEND", "local").strip().lower()
     if backend not in {"local", "azure_blob"}:
@@ -210,14 +240,14 @@ def _cleanup_versions(root, cleanup, history):
             _LOGGER.warning("Could not remove old checkpoint %s", path, exc_info=True)
 
 
-def save_model_checkpoint(model_path, model, target_model, validate, expected_generation=None):
+def save_model_checkpoint(model_path, model, target_model, validate, expected_generation=None, training_state=None):
     if not model_path:
         raise ValueError("Model path must be configured")
     backend = _checkpoint_backend()
     if backend == "azure_blob":
         from app.services.blob_checkpoints import blob_store_from_environment
         with blob_store_from_environment() as store:
-            return store.save(model_path, model, target_model, validate, expected_generation)
+            return store.save(model_path, model, target_model, validate, expected_generation, training_state=training_state)
     root = _checkpoint_root(model_path)
     versions = root / "versions"
     versions.mkdir(parents=True, exist_ok=True)
@@ -228,8 +258,11 @@ def save_model_checkpoint(model_path, model, target_model, validate, expected_ge
     try:
         model.save(str(model_file))
         target_model.save_weights(str(weights_file))
+        state_files = []
+        if training_state is not None:
+            state_files.append(write_training_state(staging, training_state))
         validate(str(model_file), str(weights_file))
-        for checkpoint_file in (model_file, weights_file):
+        for checkpoint_file in (model_file, weights_file, *state_files):
             with checkpoint_file.open("rb") as saved_file:
                 os.fsync(saved_file.fileno())
         _sync_directory(staging)

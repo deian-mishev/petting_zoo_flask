@@ -77,6 +77,14 @@ class ModelCheckpointTests(unittest.TestCase):
     def manifest(self):
         return json.loads((self.root / "current.json").read_text(encoding="utf-8"))
 
+    def test_training_state_is_saved_with_local_version(self):
+        state = {"schema_version": 1, "environments": {"boxing_v2": {
+            "epsilon": 0.42, "completed_episodes": 12, "environment_steps": 300}}}
+        save_model_checkpoint(str(self.model_path), FakeModel(b"new"), FakeModel(b"new"),
+                              validate_matching_files, training_state=state)
+        with locked_model_files(str(self.model_path), str(self.weights_path)) as files:
+            self.assertEqual(checkpoint_functions["load_training_state"](files[0]), state)
+
     def test_unconfigured_and_new_models(self):
         for model, weights in ((None, None), ("", ""), (str(self.model_path), str(self.weights_path))):
             with self.subTest(model=model), locked_model_files(model, weights) as files:

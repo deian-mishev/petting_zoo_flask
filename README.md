@@ -592,3 +592,8 @@ Set `LOG_LEVEL` and `ENV` in `.env` to control behaviour.
 [PYTHON_JOSE]: https://python-jose.readthedocs.io/
 [PYTHON_DOTENV]: https://pypi.org/project/python-dotenv/
 [PYNGROK]: https://pyngrok.readthedocs.io/
+
+A checkpoint publication failure (including a stale Azure generation) stops the
+training run. Start a new session to load the latest published weights and state;
+unsaved in-memory updates are not automatically merged. Loading an optimizer
+initializes missing slots without applying an extra gradient update.

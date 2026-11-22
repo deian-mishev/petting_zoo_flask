@@ -120,6 +120,34 @@ class BlobCheckpointTests(unittest.TestCase):
             _, generation = self.load()
         return self.store.save(self.model, FakeModel(value), FakeModel(value), validation, generation)
 
+    def test_training_state_round_trip_and_stale_write(self):
+        self.bootstrap()
+        with self.store.load(self.model) as (paths, generation):
+            self.assertEqual(local_functions["load_training_state"](paths[0])["environments"], {})
+        state = {"schema_version": 1, "environments": {
+            "boxing_v2": {"epsilon": 0.42, "completed_episodes": 12, "environment_steps": 300},
+            "pong_v3": {"epsilon": 0.8, "completed_episodes": 2, "environment_steps": 50},
+        }}
+        self.store.save(self.model, FakeModel(b"new"), FakeModel(b"new"), validate,
+                        generation, training_state=state)
+        with self.assertRaises(Stale):
+            self.store.save(self.model, FakeModel(b"stale"), FakeModel(b"stale"), validate,
+                            generation, training_state={"schema_version": 1, "environments": {}})
+        with self.store.load(self.model) as (paths, _):
+            self.assertEqual(Path(paths[0]).read_bytes(), b"new")
+            self.assertEqual(local_functions["load_training_state"](paths[0]), state)
+
+    def test_invalid_training_state_does_not_publish(self):
+        self.bootstrap()
+        before = self.manifest()
+        for epsilon in (-1, 2, float("nan"), True):
+            state = {"schema_version": 1, "environments": {"boxing_v2": {
+                "epsilon": epsilon, "completed_episodes": 0, "environment_steps": 0}}}
+            with self.assertRaises(ValueError):
+                self.store.save(self.model, FakeModel(b"new"), FakeModel(b"new"), validate,
+                                before["generation"], training_state=state)
+        self.assertEqual(self.manifest(), before)
+
     def test_explicit_migration_and_retention(self):
         self.bootstrap()
         for number in range(2, 7):

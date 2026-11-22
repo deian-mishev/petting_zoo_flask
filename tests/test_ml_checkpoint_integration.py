@@ -17,7 +17,7 @@ with patch.dict(os.environ, {"ENV": "DEV"}):
     from app.services.ml_service import ml_service
     from app.services.model_checkpoints import locked_model_files
     from app.services.blob_checkpoints import (
-        BlobCheckpointStore, CheckpointConflict, CheckpointNotFound, _prefix, _validate_with_keras,
+        BlobCheckpointStore, CheckpointConflict, CheckpointNotFound, StaleCheckpointError, _prefix, _validate_with_keras,
     )
 
 
@@ -99,6 +99,26 @@ class MLCheckpointIntegrationTests(unittest.TestCase):
                 for expected, actual in zip(target.get_weights(), loaded_agent.target_q_network.get_weights()):
                     np.testing.assert_allclose(actual, expected)
 
+    def test_blob_restart_restores_per_environment_progress(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"MODEL_CHECKPOINT_BACKEND": "azure_blob"}):
+            store = BlobCheckpointStore(MemoryBlobs(CheckpointNotFound, CheckpointConflict))
+            model_path = Path(directory) / "model.keras"
+            weights_path = Path(directory) / "target.weights.h5"
+            with patch("app.services.blob_checkpoints.blob_store_from_environment", return_value=store):
+                session, agent = self.new_session(PlayerType.COMPUTER, model_path, weights_path)
+                ml_service.load_model("test", session, (52, 40, 1), 18)
+                agent.training_state["environments"]["other_game"] = {
+                    "epsilon": 0.3, "completed_episodes": 4, "environment_steps": 90}
+                ml_service.train_model("test", session, episode_steps=123)
+                restarted, restored = self.new_session(PlayerType.COMPUTER, model_path, weights_path)
+                ml_service.load_model("restart", restarted, (52, 40, 1), 18)
+                self.assertEqual(ml_service.training_progress(restored, "boxing_v2"), {
+                    "epsilon": 0.95, "completed_episodes": 1, "environment_steps": 123})
+                ml_service.train_model("restart", restarted, episode_steps=77)
+                self.assertAlmostEqual(ml_service.training_progress(restored, "boxing_v2")["epsilon"], 0.9025)
+                self.assertEqual(ml_service.training_progress(restored, "boxing_v2")["environment_steps"], 200)
+                self.assertEqual(restored.training_state["environments"]["other_game"]["epsilon"], 0.3)
+
     def test_real_legacy_pair_is_loaded_without_migration(self):
         with tempfile.TemporaryDirectory() as directory:
             model_path = Path(directory) / "legacy.keras"
@@ -143,7 +163,8 @@ class MLCheckpointIntegrationTests(unittest.TestCase):
                 first_generation = first_agent.checkpoint_generation
                 ml_service.train_model("first", first)
                 self.assertNotEqual(first_agent.checkpoint_generation, first_generation)
-                ml_service.train_model("second", second)
+                with self.assertRaises(StaleCheckpointError):
+                    ml_service.train_model("second", second)
                 manifest, _ = store._manifest(_prefix(str(model_path)))
                 self.assertEqual(manifest["high_water"], 3)
                 self.assertEqual(manifest["generation"], first_agent.checkpoint_generation)

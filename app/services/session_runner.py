@@ -52,7 +52,8 @@ class SessionRunner:
                     if agent_in_turn.type == PlayerType.ATARI_PRO:
                         q_values = q_values[self.session.env_config.name]
                     action = ml_service.get_action(
-                        q_values, self.session.env_config.epsilon, self.session.env_config.num_actions)
+                        q_values, ml_service.training_progress(agent_in_turn, self.session.env_config.name)["epsilon"],
+                        self.session.env_config.num_actions)
 
                 agent_in_turn.current_experience = Experience(
                     state=observation,
@@ -102,7 +103,8 @@ class SessionRunner:
             for agent in self.session.agents.values():
                 agent.total_reward = 0
             shaped_rewards = {name: 0.0 for name in self.session.agents}
-            episode_epsilon = self.session.env_config.epsilon
+            episode_epsilon = {name: ml_service.training_progress(agent, self.session.env_config.name)["epsilon"]
+                               for name, agent in self.session.agents.items()}
             started = time.monotonic()
             self.session.env.reset()
             self.session.agent_iter = iter(self.session.env.agent_iter())
@@ -121,7 +123,8 @@ class SessionRunner:
                     if agent_in_turn.type == PlayerType.ATARI_PRO:
                         q_values = q_values[self.session.env_config.name]
                     action = ml_service.get_action(
-                        q_values, self.session.env_config.epsilon, self.session.env_config.num_actions)
+                        q_values, ml_service.training_progress(agent_in_turn, self.session.env_config.name)["epsilon"],
+                        self.session.env_config.num_actions)
 
                     agent_in_turn.current_experience = Experience(
                         state=observation,
@@ -132,13 +135,16 @@ class SessionRunner:
 
                     if done:
                         self.end_episode(observation)
-                        ml_service.train_model(self.sid, self.session, metrics=metrics)
+                        ml_service.train_model(self.sid, self.session, metrics=metrics, episode_steps=steps)
                         for name, agent in self.session.agents.items():
                             metrics.scalar(f"episode/{name}/reward", agent.total_reward, episode + 1)
                             metrics.scalar(f"episode/{name}/shaped_reward", shaped_rewards[name], episode + 1)
                             metrics.scalar(f"episode/{name}/replay_size", len(agent.memory_buffer), episode + 1)
                             metrics.scalar(f"episode/{name}/training_updates", metrics.updates[name], episode + 1)
-                        metrics.scalar("episode/epsilon", episode_epsilon, episode + 1)
+                            metrics.scalar(f"episode/{name}/epsilon", episode_epsilon[name], episode + 1)
+                            progress = ml_service.training_progress(agent, self.session.env_config.name)
+                            metrics.scalar(f"progress/{name}/completed_episodes", progress["completed_episodes"], episode + 1)
+                            metrics.scalar(f"progress/{name}/environment_steps", progress["environment_steps"], episode + 1)
                         metrics.scalar("episode/length", steps, episode + 1)
                         metrics.scalar("episode/duration_seconds", time.monotonic() - started, episode + 1)
                         metrics.scalar("progress/environment_steps", environment_steps, episode + 1)
@@ -157,6 +163,9 @@ class SessionRunner:
                     time.sleep(0)
                 except Exception as e:
                     app.logger.error(f"{self.sid}: Error in game loop: {e}")
+                    if done:
+                        # A failed episode checkpoint must not be followed by more training.
+                        raise
 
             if done:
                 app.logger.info(

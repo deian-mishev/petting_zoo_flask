@@ -87,6 +87,7 @@ class RunnerMetricsTests(unittest.TestCase):
         self.session = SimpleNamespace(env=self.env, agents={"first_0": self.agent},
                                        env_config=SimpleNamespace(name="boxing_v2", epsilon=0.5, num_actions=1))
         self.service = Mock()
+        self.service.training_progress.return_value = {"epsilon": 0.5, "completed_episodes": 0, "environment_steps": 0}
         self.cleanup = Mock()
 
         def module(**attributes):
@@ -129,6 +130,19 @@ class RunnerMetricsTests(unittest.TestCase):
         self.cleanup.assert_called_once_with("test", False)
         metrics = self.service.train_model.call_args.kwargs["metrics"]
         self.assertIsNone(metrics.writer)
+
+    def test_checkpoint_failure_stops_training_and_closes_session(self):
+        self.runner.set_agent_in_turn_and_current_experience = Mock(side_effect=[
+            (self.agent, False, 2, [0]), (self.agent, True, -1, [0]),
+        ])
+        self.service.train_model.side_effect = OSError("checkpoint upload failed")
+        metrics = Mock(updates=defaultdict(int))
+        with patch.dict(self.runner._run_training.__globals__, {"TrainingMetrics": Mock(return_value=metrics)}):
+            with self.assertRaisesRegex(OSError, "checkpoint upload failed"):
+                self.runner._run_training(3)
+        self.service.train_model.assert_called_once()
+        metrics.close.assert_called_once()
+        self.cleanup.assert_called_once_with("test", False)
 
     def test_interrupted_episode_is_not_reported_as_completed(self):
         self.runner.set_agent_in_turn_and_current_experience = Mock(return_value=(self.agent, False, 2, [0]))

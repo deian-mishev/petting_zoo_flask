@@ -8,9 +8,10 @@ from app.config.env_config import *
 from app.config.ml_env_config import ATTARI_PRO_MODEL_HEADS
 from app.config.session_state import SessionState
 from app.config.player_state import PlayerState, PlayerType
-from app.services.model_checkpoints import load_model_checkpoint, save_model_checkpoint
+from app.services.model_checkpoints import load_model_checkpoint, save_model_checkpoint, load_training_state
 from app.services.blob_checkpoints import StaleCheckpointError
 
+import copy
 import random
 import numpy as np
 import tensorflow as tf
@@ -32,7 +33,7 @@ class MLService:
             cls._instance._initialized = False
         return cls._instance
 
-    def train_model(self, sid, session: SessionState, metrics=None):
+    def train_model(self, sid, session: SessionState, metrics=None, episode_steps=None):
         shared_models = {}
         for agent_name, agent_state in session.agents.items():
             with agent_state.lock:
@@ -53,14 +54,19 @@ class MLService:
                             metrics.update(agent_name, loss)
                     shared_models[agent_state.type.name] = agent_state
 
-            with session.env_config.lock:
-                session.env_config.epsilon = ml_service.get_new_eps(session.env_config.epsilon)
-
         for save_key, agent_state in shared_models.items():
             with agent_state.lock:
                 if not agent_state.model_path or not agent_state.weights_path:
                     app.logger.warning(f"{sid}: Skipping save for {save_key} — model path not configured")
                     continue
+                state = copy.deepcopy(agent_state.training_state)
+                progress = state["environments"].setdefault(session.env_config.name, {
+                    "epsilon": EPSILON, "completed_episodes": 0, "environment_steps": 0,
+                })
+                progress["epsilon"] = self.get_new_eps(progress["epsilon"])
+                if episode_steps is not None:
+                    progress["completed_episodes"] += 1
+                    progress["environment_steps"] += episode_steps
                 app.logger.info(f"{sid}: Saving model for {save_key}")
                 try:
                     version = save_model_checkpoint(
@@ -73,10 +79,15 @@ class MLService:
                             session.env_config.num_actions,
                         ),
                         expected_generation=agent_state.checkpoint_generation,
+                        training_state=state,
                     )
                 except StaleCheckpointError as error:
                     app.logger.warning(f"{sid}: Skipping stale {save_key} training update: {error}")
-                    continue
+                    raise
+                agent_state.training_state = state
+                for other in session.agents.values():
+                    if other.q_network is agent_state.q_network:
+                        other.training_state = state
                 generation = getattr(version, "generation", None)
                 if generation is not None:
                     for other in session.agents.values():
@@ -84,6 +95,11 @@ class MLService:
                                 and other.target_q_network is agent_state.target_q_network):
                             other.checkpoint_generation = generation
                 app.logger.info(f"{sid}: Published {save_key} checkpoint {version}")
+
+    def training_progress(self, agent, env_name):
+        return agent.training_state["environments"].setdefault(env_name, {
+            "epsilon": EPSILON, "completed_episodes": 0, "environment_steps": 0,
+        })
 
     def train_step(self, current_agent: PlayerState, env_name = False):
         if len(current_agent.memory_buffer) < MINIBATCH_SIZE:
@@ -309,22 +325,22 @@ class MLService:
         return q_network, target_q_network
 
     def load_model(self, sid, session_state: SessionState, obs_shape, num_actions):
-        seen_states: dict[PlayerType, PlayerState] = {}
+        seen_states = {}
         for player_state in session_state.agents.values():
-            if player_state.type in [PlayerType.HUMAN, PlayerType.ATARI_PRO]:
-                other_type = PlayerType.ATARI_PRO if player_state.type == PlayerType.HUMAN else PlayerType.HUMAN
-                if other_type in seen_states:
-                    other = seen_states[other_type]
-                    player_state.q_network = other.q_network
-                    player_state.target_q_network = other.target_q_network
-                    player_state.optimizer = other.optimizer
-                    player_state.checkpoint_generation = other.checkpoint_generation
-                    continue
-            
-            seen_states[player_state.type] = player_state
+            key = (player_state.model_path, player_state.weights_path)
+            if key in seen_states:
+                other = seen_states[key]
+                player_state.q_network = other.q_network
+                player_state.target_q_network = other.target_q_network
+                player_state.training_state = other.training_state
+                player_state.optimizer = other.optimizer
+                player_state.checkpoint_generation = other.checkpoint_generation
+                continue
+            seen_states[key] = player_state
             with load_model_checkpoint(player_state.model_path, player_state.weights_path) as (model_files, generation):
                 player_state.checkpoint_generation = generation
                 if model_files is not None:
+                    player_state.training_state = load_training_state(model_files[0])
                     app.logger.info(
                         f"{sid}: Loading existing models {model_files[0]}")
                     player_state.q_network, player_state.target_q_network = self._load_networks(
@@ -353,10 +369,9 @@ class MLService:
                     player_state.q_network.get_weights())
                 player_state.q_network.compile(
                     optimizer=player_state.optimizer, loss='mse')
-            zero_grads = [tf.zeros_like(
-                v) for v in player_state.q_network.trainable_variables]
-            player_state.optimizer.apply_gradients(
-                zip(zero_grads, player_state.q_network.trainable_variables))
+            # Initialize slots without taking an optimizer step or changing restored weights.
+            if not player_state.optimizer.built:
+                player_state.optimizer.build(player_state.q_network.trainable_variables)
 
 
 ml_service = MLService()
