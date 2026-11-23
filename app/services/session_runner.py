@@ -1,5 +1,6 @@
 import threading
 import time
+from collections import Counter
 import tensorflow as tf
 from flask_socketio import SocketIO
 from app import app
@@ -19,6 +20,8 @@ class SessionRunner:
         self.socketio = socketio
         self._stop_event = threading.Event()
         self._running_thread = None
+        self._transitions = Counter()
+        self._match_update = None
         self._frames = FrameDelivery(
             lambda frame, **kwargs: self.socketio.emit('frame', frame, room=self.sid, **kwargs),
             require_ack=frame_ack,
@@ -48,7 +51,30 @@ class SessionRunner:
                 time.sleep(INPUT_TIMEOUT)
 
         if self.session.current_agent is None:
-            self.socketio.emit('episode_end', {'message': 'Episode ended'}, room=self.sid)
+            status = self.update_after_match(notify=True)
+            cleanup_session(self.sid, False)
+            self.socketio.emit('episode_end', {
+                'message': 'Episode ended', 'model_update': status,
+            }, room=self.sid)
+
+    def update_after_match(self, *, notify=False):
+        if self._match_update is not None:
+            return self._match_update
+
+        updates = ml_service.match_updates(self.session, self._transitions)
+        if not any(updates.values()):
+            self._match_update = 'skipped'
+            return self._match_update
+
+        try:
+            if notify:
+                self.socketio.emit('model_update_started', {}, room=self.sid)
+            ml_service.train_model(self.sid, self.session, updates_by_agent=updates)
+            self._match_update = 'completed'
+        except Exception:
+            self._match_update = 'failed'
+            app.logger.exception(f"{self.sid}: Error updating model after match")
+        return self._match_update
 
     def start_training(self, max_episodes=1):
         if self._running_thread and self._running_thread.is_alive():
@@ -73,6 +99,7 @@ class SessionRunner:
                 break
             for agent in self.session.agents.values():
                 agent.total_reward = 0
+            self._transitions.clear()
             shaped_rewards = {name: 0.0 for name in self.session.agents}
             episode_epsilon = {name: ml_service.training_progress(agent, self.session.env_config.name)["epsilon"]
                                for name, agent in self.session.agents.items()}
@@ -95,7 +122,9 @@ class SessionRunner:
             if self.session.current_agent is not None:
                 break
 
-            ml_service.train_model(self.sid, self.session, metrics=metrics, episode_steps=steps)
+            updates = ml_service.match_updates(self.session, self._transitions)
+            ml_service.train_model(self.sid, self.session, metrics=metrics, episode_steps=steps,
+                                   updates_by_agent=updates)
             for name, agent in self.session.agents.items():
                 metrics.scalar(f"episode/{name}/reward", agent.total_reward, episode + 1)
                 metrics.scalar(f"episode/{name}/shaped_reward", shaped_rewards[name], episode + 1)
@@ -136,6 +165,7 @@ class SessionRunner:
             experience.next_state = observation
             experience.done = done
             agent.memory_buffer.append(experience)
+            self._transitions[id(agent)] += 1
 
         agent.current_experience = None if done else Experience(state=observation, action=action)
         self._advance_agent()

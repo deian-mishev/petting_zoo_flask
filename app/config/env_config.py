@@ -15,6 +15,8 @@ ATTARI_PRO_LOCK = eventlet.semaphore.Semaphore()
 
 SEED = 0                        # seed for the pseudo-random number generator.
 MINIBATCH_SIZE = 128            # mini-batch size.
+TRANSITIONS_PER_UPDATE = 64
+MAX_UPDATES_PER_PLAYER = 50
 TAU = 1e-3                      # soft update parameter.
 GAMMA = 0.997                   # discount factor
 ALPHA = 1e-3                    # learning rate

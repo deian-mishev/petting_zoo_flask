@@ -89,6 +89,7 @@ class RunnerMetricsTests(unittest.TestCase):
         self.service = Mock()
         self.service.preprocess_state.side_effect = lambda shape, observation: observation
         self.service.get_action.return_value = 0
+        self.service.match_updates.return_value = {"first_0": 0}
         self.service.training_progress.return_value = {"epsilon": 0.5, "completed_episodes": 0, "environment_steps": 0}
         self.cleanup = Mock()
 
@@ -114,6 +115,22 @@ class RunnerMetricsTests(unittest.TestCase):
         with patch.dict(sys.modules, stubs):
             runner_class = runpy.run_path(str(ROOT / "app/services/session_runner.py"))["SessionRunner"]
         self.runner = runner_class("test", self.session, None)
+
+    def test_completed_match_notifies_during_update_and_trains_once(self):
+        self.session.current_agent = None
+        self.runner.socketio = Mock()
+        self.service.match_updates.return_value = {"first_0": 50}
+
+        def train(*args, **kwargs):
+            self.runner.socketio.emit.assert_called_once_with("model_update_started", {}, room="test")
+
+        self.service.train_model.side_effect = train
+        self.runner._run_loop()
+        self.runner.socketio.emit.assert_called_with(
+            "episode_end", {"message": "Episode ended", "model_update": "completed"}, room="test")
+        self.cleanup.assert_called_once_with("test", False)
+        self.assertEqual(self.runner.update_after_match(), "completed")
+        self.service.train_model.assert_called_once_with("test", self.session, updates_by_agent={"first_0": 50})
 
     def test_episode_rewards_reset_and_events_are_readable(self):
         self.env.last.side_effect = [

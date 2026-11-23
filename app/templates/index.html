@@ -160,6 +160,13 @@
             margin-bottom: 4px;
         }
 
+        #match-status {
+            color: #171d13;
+            text-align: center;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
         label {
             font-weight: bold;
             color: #333;
@@ -342,7 +349,10 @@
     <div id="game-wrapper" style="--video-width: {{ width }}px;">
         <div id="screen-container">
             <a id="logout-btn" href="/logout">Logout</a>
-            <h1 id="title">Agent Playground</h1>
+            <div>
+                <h1>Agent Playground</h1>
+                <p id="match-status" role="status"></p>
+            </div>
 
             <label for="envSelect">Environment</label>
             <select id="envSelect"></select>

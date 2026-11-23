@@ -33,26 +33,33 @@ class MLService:
             cls._instance._initialized = False
         return cls._instance
 
-    def train_model(self, sid, session: SessionState, metrics=None, episode_steps=None):
+    def match_updates(self, session, transitions):
+        return {
+            name: min(MAX_UPDATES_PER_PLAYER, transitions.get(id(agent), 0) // TRANSITIONS_PER_UPDATE)
+            if len(agent.memory_buffer) >= MINIBATCH_SIZE and agent.model_path and agent.weights_path else 0
+            for name, agent in session.agents.items()
+        }
+
+    def train_model(self, sid, session: SessionState, metrics=None, episode_steps=None, *, updates_by_agent=None):
         shared_models = {}
         for agent_name, agent_state in session.agents.items():
+            updates = 10 if updates_by_agent is None else updates_by_agent[agent_name]
+            if updates == 0 and episode_steps is None:
+                continue
+
             with agent_state.lock:
                 app.logger.info(
                     f"{sid}: Training {agent_name}:{agent_state.type.value} with score: {agent_state.total_reward}")
-              
-                if agent_state.type in [PlayerType.HUMAN, PlayerType.ATARI_PRO]:
-                    for _ in range(10):
-                        loss = ml_service.train_step(agent_state, session.env_config.name)
-                        if metrics is not None:
-                            metrics.update(agent_name, loss)
-                    shared_models["ATARI_PRO"] = agent_state
-                else:
-                    save_key = agent_state.type.name
-                    for _ in range(10):
-                        loss = ml_service.train_step(agent_state)
-                        if metrics is not None:
-                            metrics.update(agent_name, loss)
-                    shared_models[agent_state.type.name] = agent_state
+                use_pro_head = agent_state.type in (PlayerType.HUMAN, PlayerType.ATARI_PRO)
+                for _ in range(updates):
+                    if use_pro_head:
+                        loss = self.train_step(agent_state, session.env_config.name)
+                    else:
+                        loss = self.train_step(agent_state)
+                    if metrics is not None:
+                        metrics.update(agent_name, loss)
+                save_key = "ATARI_PRO" if use_pro_head else agent_state.type.name
+                shared_models[save_key] = agent_state
 
         for save_key, agent_state in shared_models.items():
             with agent_state.lock:

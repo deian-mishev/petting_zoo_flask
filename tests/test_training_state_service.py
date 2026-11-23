@@ -39,7 +39,8 @@ class TrainingStateServiceTests(unittest.TestCase):
             "cv2": module(), "numpy": module(ndarray=object),
             "tensorflow": module(function=identity_function, random=Mock()),
             "app": module(app=SimpleNamespace(logger=Mock())),
-            "app.config.env_config": module(SEED=0, EPSILON=1.0, E_MIN=.01, E_DECAY=.95),
+            "app.config.env_config": module(SEED=0, EPSILON=1.0, E_MIN=.01, E_DECAY=.95,
+                MINIBATCH_SIZE=128, TRANSITIONS_PER_UPDATE=64, MAX_UPDATES_PER_PLAYER=50),
             "app.config.ml_env_config": module(ATTARI_PRO_MODEL_HEADS={}),
             "app.config.session_state": module(SessionState=object),
             "app.config.player_state": module(PlayerState=object, PlayerType=PlayerType),
@@ -63,7 +64,12 @@ class TrainingStateServiceTests(unittest.TestCase):
         self.session.agents["second"] = second
         self.agent.training_state["environments"]["pong"] = {
             "epsilon": .2, "completed_episodes": 5, "environment_steps": 100}
-        self.service.train_model("test", self.session, episode_steps=25)
+        self.agent.memory_buffer = [None] * 128
+        second.memory_buffer = [None] * 128
+        updates = self.service.match_updates(self.session, {id(self.agent): 7000, id(second): 193})
+        self.assertEqual(updates, {"first": 50, "second": 3})
+        self.service.train_model("test", self.session, episode_steps=25, updates_by_agent=updates)
+        self.assertEqual(self.service.train_step.call_count, 53)
         self.save.assert_called_once()
         self.assertIs(self.agent.training_state, second.training_state)
         self.assertEqual(self.service.training_progress(self.agent, "boxing_v2"), {
@@ -124,6 +130,7 @@ class RunnerCheckpointFailureTests(unittest.TestCase):
             env_config=SimpleNamespace(name="boxing_v2", num_actions=1, observation_space=(1,)))
         service = Mock()
         service.get_action.return_value = 0
+        service.match_updates.return_value = {"first": 0}
         service.training_progress.return_value = {"epsilon": .2}
         service.train_model.side_effect = OSError("upload failed")
         cleanup = Mock()
@@ -145,7 +152,8 @@ class RunnerCheckpointFailureTests(unittest.TestCase):
             runner = runpy.run_path(str(ROOT / "app/services/session_runner.py"))["SessionRunner"]("test", session, None)
         with self.assertRaisesRegex(OSError, "upload failed"):
             runner._run_training(3)
-        service.train_model.assert_called_once_with("test", session, metrics=metrics, episode_steps=1)
+        service.train_model.assert_called_once_with("test", session, metrics=metrics, episode_steps=1,
+                                                    updates_by_agent={"first": 0})
         self.assertEqual(service.get_action.call_args.args[1], .2)
         metrics.close.assert_called_once()
         cleanup.assert_called_once_with("test", False)

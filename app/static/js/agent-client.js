@@ -1,7 +1,7 @@
 const vid = document.getElementById('video');
 const framePlayer = new FramePlayer(vid);
 const pressedKeys = new Set();
-const title = document.getElementById('title');
+const matchStatus = document.getElementById('match-status');
 const envSelect = document.getElementById('envSelect');
 const playerConfigDiv = document.getElementById("player-config");
 const startBtn = document.getElementById('startBtn');
@@ -11,6 +11,7 @@ const joystickZone = document.getElementById('joystick-zone');
 const actionButton = document.getElementById('action-button');
 
 let isConnected = false;
+let isUpdatingModel = false;
 let socket = null;
 let animationFrameId = null;
 let lastSentKeys = '';
@@ -152,7 +153,7 @@ function checkEnableStart() {
     selects.forEach(sel => {
         if (sel.value === "human") humanCount++;
     });
-    startBtn.disabled = humanCount > 1 || envSelect.value === "";
+    startBtn.disabled = socket !== null || humanCount > 1 || envSelect.value === "";
 }
 
 function sendInputIfChanged() {
@@ -180,11 +181,7 @@ function gameLoop(timestamp) {
     animationFrameId = requestAnimationFrame(gameLoop);
 }
 
-function cleanup() {
-    if (!isConnected && !socket) return;
-    const previousSocket = socket;
-    socket = null;
-    startBtn.disabled = false;
+function showSetup() {
     isConnected = false;
     document.documentElement.classList.remove('playing');
 
@@ -199,12 +196,20 @@ function cleanup() {
     lastSentKeys = '';
     framePlayer.reset();
 
-    previousSocket?.disconnect();
-    title.textContent = "Episode ended, play again ..";
     vid.style.display = 'none';
     controls.style.display = 'none';
     screen_container.style.display = 'flex';
+}
 
+function cleanup(message = '') {
+    if (!isConnected && !socket) return;
+    const previousSocket = socket;
+    socket = null;
+    if (isConnected) showSetup();
+    isUpdatingModel = false;
+
+    previousSocket?.disconnect();
+    matchStatus.textContent = message;
     checkEnableStart();
 }
 
@@ -262,7 +267,7 @@ function renderPlayerConfig(envName) {
 }
 
 startBtn.addEventListener("click", () => {
-    if (isConnected) return;
+    if (socket || isConnected) return;
     startBtn.disabled = true;
     const selects = playerConfigDiv.querySelectorAll("select");
     const environment = envSelect.value;
@@ -271,12 +276,13 @@ startBtn.addEventListener("click", () => {
         return;
     }
 
+    matchStatus.textContent = '';
     const players = {};
     selects.forEach(sel => {
         players[sel.dataset.agent] = sel.value;
     });
 
-    socket = io({
+    const gameSocket = io({
         query: {
             env: environment,
             players: JSON.stringify(players),
@@ -284,15 +290,16 @@ startBtn.addEventListener("click", () => {
         },
         transports: ['polling', 'websocket']
     });
+    socket = gameSocket;
 
-    socket.on("connect",
+    gameSocket.on("connect",
         () => {
-            title.textContent = "Agent Playground";
+            if (socket !== gameSocket) return;
             screen_container.style.display = 'none';
             vid.style.display = 'block';
             controls.style.display = 'block';
             isConnected = true;
-            const engine = socket.io.engine;
+            const engine = gameSocket.io.engine;
             console.info('Game transport:', engine.transport.name);
             engine.once('upgrade', transport => console.info('Game transport upgraded:', transport.name));
             window.getSelection()?.removeAllRanges();
@@ -308,23 +315,42 @@ startBtn.addEventListener("click", () => {
         }
     );
 
-    socket.on("connect_error", (error) => {
+    gameSocket.on("connect_error", (error) => {
+        if (socket !== gameSocket) return;
         console.error("Socket connection error:", error);
-        cleanup();
-        title.textContent = "Game could not start. Please try again later.";
+        cleanup("Game could not start. Please try again later.");
     });
 
-    const frameSocket = socket;
-    socket.on("frame", (frameBytes, acknowledge) => {
-        if (socket !== frameSocket || !isConnected) {
+    gameSocket.on("frame", (frameBytes, acknowledge) => {
+        if (socket !== gameSocket || !isConnected) {
             if (typeof acknowledge === 'function') acknowledge();
             return;
         }
         framePlayer.receive(frameBytes, acknowledge);
     });
 
-    socket.on("episode_end", cleanup);
-    socket.on("disconnect", cleanup);
+    gameSocket.on("model_update_started", () => {
+        if (socket !== gameSocket) return;
+        isUpdatingModel = true;
+        showSetup();
+        matchStatus.textContent = "Match ended. Updating the model…";
+    });
+
+    gameSocket.on("episode_end", (result) => {
+        if (socket !== gameSocket) return;
+        if (result?.model_update === 'completed') {
+            cleanup("Model updated. Ready for another match.");
+        } else if (result?.model_update === 'failed') {
+            cleanup("The model update failed. You can start another match.");
+        } else {
+            cleanup("Match ended.");
+        }
+    });
+
+    gameSocket.on("disconnect", () => {
+        if (socket !== gameSocket) return;
+        cleanup(isUpdatingModel ? "Connection lost during the model update." : "Game disconnected.");
+    });
 });
 
-window.addEventListener("beforeunload", cleanup);
+window.addEventListener("beforeunload", () => cleanup());
