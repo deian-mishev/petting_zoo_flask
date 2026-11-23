@@ -115,14 +115,15 @@ class TrainingStateServiceTests(unittest.TestCase):
 class RunnerCheckpointFailureTests(unittest.TestCase):
     def test_failed_checkpoint_stops_before_next_episode_and_cleans_up(self):
         from collections import defaultdict
-        from itertools import repeat
         agent = SimpleNamespace(type=PlayerType.COMPUTER, total_reward=0,
             q_network=Mock(return_value=[0]), memory_buffer=[], current_experience=None)
         env = Mock()
-        env.agent_iter.side_effect = lambda: repeat("first")
+        env.agent_iter.side_effect = lambda: iter(("first", "first"))
+        env.last.side_effect = [([0], 0, False, False, {}), ([1], -1, True, False, {})]
         session = SimpleNamespace(env=env, agents={"first": agent},
-            env_config=SimpleNamespace(name="boxing_v2", num_actions=1))
+            env_config=SimpleNamespace(name="boxing_v2", num_actions=1, observation_space=(1,)))
         service = Mock()
+        service.get_action.return_value = 0
         service.training_progress.return_value = {"epsilon": .2}
         service.train_model.side_effect = OSError("upload failed")
         cleanup = Mock()
@@ -142,8 +143,6 @@ class RunnerCheckpointFailureTests(unittest.TestCase):
         }
         with patch.dict(sys.modules, stubs):
             runner = runpy.run_path(str(ROOT / "app/services/session_runner.py"))["SessionRunner"]("test", session, None)
-        runner.set_agent_in_turn_and_current_experience = Mock(side_effect=[
-            (agent, False, 2, [0]), (agent, True, -1, [0])])
         with self.assertRaisesRegex(OSError, "upload failed"):
             runner._run_training(3)
         service.train_model.assert_called_once_with("test", session, metrics=metrics, episode_steps=1)

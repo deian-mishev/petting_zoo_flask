@@ -37,47 +37,18 @@ class SessionRunner:
         return self._stop_event.is_set()
 
     def _run_loop(self):
-        while not self._should_stop():
+        while self.session.current_agent is not None and not self._should_stop():
             try:
-                agent_in_turn, done, reward, observation = self.set_agent_in_turn_and_current_experience()
-                agent_in_turn.total_reward += reward
-                reward = self.augment_reward(reward)
-
-                if agent_in_turn.type == PlayerType.HUMAN:
-                    with self.session.lock:
-                        action = self.session.next_human_action
-                else:
-                    q_values = agent_in_turn.q_network(
-                        tf.expand_dims(observation, 0))
-                    if agent_in_turn.type == PlayerType.ATARI_PRO:
-                        q_values = q_values[self.session.env_config.name]
-                    action = ml_service.get_action(
-                        q_values, ml_service.training_progress(agent_in_turn, self.session.env_config.name)["epsilon"],
-                        self.session.env_config.num_actions)
-
-                agent_in_turn.current_experience = Experience(
-                    state=observation,
-                    action=action,
-                    reward=reward,
-                    done=done
-                )
-
-                if done:
-                    self.end_episode(observation)
-                    self.socketio.emit(
-                        'episode_end', {'message': 'Episode ended'}, room=self.sid)
-                    return
-
-                self.session.env.step(action)
-                self.session.current_agent = self.session.agents[next(
-                    self.session.agent_iter)]
-
-                self._frames.send_if_due(lambda: render_frame(self.session))
-
+                _, _, acted = self._step_turn()
+                if acted:
+                    self._frames.send_if_due(lambda: render_frame(self.session))
+                    time.sleep(INPUT_TIMEOUT)
             except Exception as e:
                 app.logger.error(f"{self.sid}: Error emitting frame: {e}")
+                time.sleep(INPUT_TIMEOUT)
 
-            time.sleep(INPUT_TIMEOUT)
+        if self.session.current_agent is None:
+            self.socketio.emit('episode_end', {'message': 'Episode ended'}, room=self.sid)
 
     def start_training(self, max_episodes=1):
         if self._running_thread and self._running_thread.is_alive():
@@ -108,95 +79,79 @@ class SessionRunner:
             started = time.monotonic()
             self.session.env.reset()
             self.session.agent_iter = iter(self.session.env.agent_iter())
-            self.session.current_agent = self.session.agents[next(self.session.agent_iter)]
-            done = False
+            self._advance_agent()
             steps = 0
-            while not done and not self._should_stop():
-                try:
-                    agent_in_turn, done, reward, observation = self.set_agent_in_turn_and_current_experience()
-                    agent_in_turn.total_reward += reward
-                    reward = self.augment_reward(reward)
-                    shaped_rewards[agent_names[id(agent_in_turn)]] += reward
-
-                    q_values = agent_in_turn.q_network(
-                        tf.expand_dims(observation, 0))
-                    if agent_in_turn.type == PlayerType.ATARI_PRO:
-                        q_values = q_values[self.session.env_config.name]
-                    action = ml_service.get_action(
-                        q_values, ml_service.training_progress(agent_in_turn, self.session.env_config.name)["epsilon"],
-                        self.session.env_config.num_actions)
-
-                    agent_in_turn.current_experience = Experience(
-                        state=observation,
-                        action=action,
-                        reward=reward,
-                        done=done
-                    )
-
-                    if done:
-                        self.end_episode(observation)
-                        ml_service.train_model(self.sid, self.session, metrics=metrics, episode_steps=steps)
-                        for name, agent in self.session.agents.items():
-                            metrics.scalar(f"episode/{name}/reward", agent.total_reward, episode + 1)
-                            metrics.scalar(f"episode/{name}/shaped_reward", shaped_rewards[name], episode + 1)
-                            metrics.scalar(f"episode/{name}/replay_size", len(agent.memory_buffer), episode + 1)
-                            metrics.scalar(f"episode/{name}/training_updates", metrics.updates[name], episode + 1)
-                            metrics.scalar(f"episode/{name}/epsilon", episode_epsilon[name], episode + 1)
-                            progress = ml_service.training_progress(agent, self.session.env_config.name)
-                            metrics.scalar(f"progress/{name}/completed_episodes", progress["completed_episodes"], episode + 1)
-                            metrics.scalar(f"progress/{name}/environment_steps", progress["environment_steps"], episode + 1)
-                        metrics.scalar("episode/length", steps, episode + 1)
-                        metrics.scalar("episode/duration_seconds", time.monotonic() - started, episode + 1)
-                        metrics.scalar("progress/environment_steps", environment_steps, episode + 1)
-                        metrics.scalar("progress/completed_episodes", episode + 1, environment_steps)
-                        metrics.flush()
-                        break
-
-                    self.session.env.step(action)
+            while self.session.current_agent is not None and not self._should_stop():
+                agent, shaped_reward, acted = self._step_turn()
+                shaped_rewards[agent_names[id(agent)]] += shaped_reward
+                if acted:
                     steps += 1
                     environment_steps += 1
-                    self.session.current_agent = self.session.agents[next(
-                        self.session.agent_iter)]
                     if steps % 2000 == 0:
                         app.logger.info(
                             f"{self.sid}: Training for episode {episode + 1} still in session...")
                     time.sleep(0)
-                except Exception as e:
-                    app.logger.error(f"{self.sid}: Error in game loop: {e}")
-                    if done:
-                        # A failed episode checkpoint must not be followed by more training.
-                        raise
 
-            if done:
-                app.logger.info(
-                    f"{self.sid}: Episode {episode + 1}/{max_episodes} completed.")
+            if self.session.current_agent is not None:
+                break
 
-    def end_episode(self, last_observation):
-        for agent in self.session.agents.values():
-            if agent.current_experience:
-                agent.current_experience.next_state = last_observation
-                agent.memory_buffer.append(agent.current_experience)
-                agent.current_experience = None
+            ml_service.train_model(self.sid, self.session, metrics=metrics, episode_steps=steps)
+            for name, agent in self.session.agents.items():
+                metrics.scalar(f"episode/{name}/reward", agent.total_reward, episode + 1)
+                metrics.scalar(f"episode/{name}/shaped_reward", shaped_rewards[name], episode + 1)
+                metrics.scalar(f"episode/{name}/replay_size", len(agent.memory_buffer), episode + 1)
+                metrics.scalar(f"episode/{name}/training_updates", metrics.updates[name], episode + 1)
+                metrics.scalar(f"episode/{name}/epsilon", episode_epsilon[name], episode + 1)
+                progress = ml_service.training_progress(agent, self.session.env_config.name)
+                metrics.scalar(f"progress/{name}/completed_episodes", progress["completed_episodes"], episode + 1)
+                metrics.scalar(f"progress/{name}/environment_steps", progress["environment_steps"], episode + 1)
+            metrics.scalar("episode/length", steps, episode + 1)
+            metrics.scalar("episode/duration_seconds", time.monotonic() - started, episode + 1)
+            metrics.scalar("progress/environment_steps", environment_steps, episode + 1)
+            metrics.scalar("progress/completed_episodes", episode + 1, environment_steps)
+            metrics.flush()
+            app.logger.info(f"{self.sid}: Episode {episode + 1}/{max_episodes} completed.")
 
-        self.session.env.reset()
-        self.session.agent_iter = iter(self.session.env.agent_iter())
-        self.session.current_agent = self.session.agents[next(
-            self.session.agent_iter)]
+    def _advance_agent(self):
+        name = next(self.session.agent_iter, None)
+        self.session.current_agent = self.session.agents[name] if name is not None else None
 
-    def set_agent_in_turn_and_current_experience(self):
-        agent_in_turn = self.session.current_agent
+    def _step_turn(self):
+        agent = self.session.current_agent
         obs, reward, terminated, truncated, _ = self.session.env.last()
         done = terminated or truncated
-
-        obs = ml_service.preprocess_state(
+        observation = ml_service.preprocess_state(
             self.session.env_config.observation_space, obs)
 
-        if agent_in_turn.current_experience is not None:
-            agent_in_turn.current_experience.next_state = obs
-            agent_in_turn.memory_buffer.append(
-                agent_in_turn.current_experience)
+        # PettingZoo requires a None step to consume a finished agent's turn.
+        action = None if done else self._select_action(agent, observation)
+        self.session.env.step(action)
 
-        return agent_in_turn, done, reward, obs
+        agent.total_reward += reward
+        shaped_reward = 0.0
+        experience = agent.current_experience
+        if experience is not None:
+            shaped_reward = self.augment_reward(reward)
+            experience.reward = shaped_reward
+            experience.next_state = observation
+            experience.done = done
+            agent.memory_buffer.append(experience)
+
+        agent.current_experience = None if done else Experience(state=observation, action=action)
+        self._advance_agent()
+        return agent, shaped_reward, not done
+
+    def _select_action(self, agent, observation):
+        if agent.type == PlayerType.HUMAN:
+            with self.session.lock:
+                return self.session.next_human_action
+
+        config = self.session.env_config
+        q_values = agent.q_network(tf.expand_dims(observation, 0))
+        if agent.type == PlayerType.ATARI_PRO:
+            q_values = q_values[config.name]
+        epsilon = ml_service.training_progress(agent, config.name)["epsilon"]
+        return ml_service.get_action(q_values, epsilon, config.num_actions)
 
     def augment_reward(self, reward):
         if reward > 0:

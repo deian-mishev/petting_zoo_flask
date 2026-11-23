@@ -1,6 +1,5 @@
 from collections import defaultdict
 from enum import Enum
-from itertools import repeat
 import logging
 import os
 from pathlib import Path
@@ -83,10 +82,13 @@ class RunnerMetricsTests(unittest.TestCase):
                                      q_network=Mock(return_value=[0]), memory_buffer=[],
                                      current_experience=None)
         self.env = Mock()
-        self.env.agent_iter.side_effect = lambda: repeat("first_0")
+        self.env.agent_iter.side_effect = lambda: iter(("first_0", "first_0", "first_0"))
         self.session = SimpleNamespace(env=self.env, agents={"first_0": self.agent},
-                                       env_config=SimpleNamespace(name="boxing_v2", epsilon=0.5, num_actions=1))
+                                       env_config=SimpleNamespace(name="boxing_v2", num_actions=1,
+                                                                  observation_space=(1,)))
         self.service = Mock()
+        self.service.preprocess_state.side_effect = lambda shape, observation: observation
+        self.service.get_action.return_value = 0
         self.service.training_progress.return_value = {"epsilon": 0.5, "completed_episodes": 0, "environment_steps": 0}
         self.cleanup = Mock()
 
@@ -114,11 +116,10 @@ class RunnerMetricsTests(unittest.TestCase):
         self.runner = runner_class("test", self.session, None)
 
     def test_episode_rewards_reset_and_events_are_readable(self):
-        # Two two-observation episodes, each with one environment action.
-        self.runner.set_agent_in_turn_and_current_experience = Mock(side_effect=[
-            (self.agent, False, 2, [0]), (self.agent, True, -1, [0]),
-            (self.agent, False, 3, [0]), (self.agent, True, -1, [0]),
-        ])
+        self.env.last.side_effect = [
+            ([0], 0, False, False, {}), ([1], 2, False, False, {}), ([2], -1, True, False, {}),
+            ([0], 0, False, False, {}), ([1], 3, False, False, {}), ([2], -1, True, False, {}),
+        ]
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {
             "TENSORBOARD_ENABLED": "true", "TENSORBOARD_LOG_DIR": directory,
         }):
@@ -126,15 +127,15 @@ class RunnerMetricsTests(unittest.TestCase):
             run_dir = next((Path(directory) / "boxing_v2").iterdir())
             self.assertEqual(read_scalars(run_dir, "episode/first_0/reward"), [(1, 1.0), (2, 2.0)])
             self.assertEqual(read_scalars(run_dir, "episode/first_0/shaped_reward"), [(1, 7.0), (2, 12.0)])
-            self.assertEqual(read_scalars(run_dir, "progress/environment_steps"), [(1, 1.0), (2, 2.0)])
+            self.assertEqual(read_scalars(run_dir, "progress/environment_steps"), [(1, 2.0), (2, 4.0)])
         self.cleanup.assert_called_once_with("test", False)
         metrics = self.service.train_model.call_args.kwargs["metrics"]
         self.assertIsNone(metrics.writer)
 
     def test_checkpoint_failure_stops_training_and_closes_session(self):
-        self.runner.set_agent_in_turn_and_current_experience = Mock(side_effect=[
-            (self.agent, False, 2, [0]), (self.agent, True, -1, [0]),
-        ])
+        self.env.last.side_effect = [
+            ([0], 0, False, False, {}), ([1], 2, False, False, {}), ([2], -1, True, False, {}),
+        ]
         self.service.train_model.side_effect = OSError("checkpoint upload failed")
         metrics = Mock(updates=defaultdict(int))
         with patch.dict(self.runner._run_training.__globals__, {"TrainingMetrics": Mock(return_value=metrics)}):
@@ -145,7 +146,7 @@ class RunnerMetricsTests(unittest.TestCase):
         self.cleanup.assert_called_once_with("test", False)
 
     def test_interrupted_episode_is_not_reported_as_completed(self):
-        self.runner.set_agent_in_turn_and_current_experience = Mock(return_value=(self.agent, False, 2, [0]))
+        self.env.last.return_value = ([0], 0, False, False, {})
         self.env.step.side_effect = lambda _: self.runner._stop_event.set()
         metrics = Mock(updates=defaultdict(int))
         self.runner._run_training_episodes(2, metrics)

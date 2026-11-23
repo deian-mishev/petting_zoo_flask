@@ -112,10 +112,13 @@ class GameLoopDeliveryTests(unittest.TestCase):
             HUMAN = "human"
             ATARI_PRO = "atari_ai_pro"
 
-        agent = SimpleNamespace(type=PlayerType.HUMAN, total_reward=0, current_experience=None)
+        agent = SimpleNamespace(type=PlayerType.HUMAN, total_reward=0, current_experience=None,
+                                memory_buffer=[])
         session = SimpleNamespace(lock=threading.Lock(), next_human_action=0,
-                                  env=Mock(), agents={"human": agent},
+                                  env=Mock(), env_config=SimpleNamespace(observation_space=(1,)),
+                                  agents={"human": agent},
                                   agent_iter=repeat("human"), current_agent=agent)
+        session.env.last.return_value = ([], 0, False, False, {})
         now = [0.0]
         render = Mock(return_value=b"jpeg")
         stubs = {
@@ -138,7 +141,6 @@ class GameLoopDeliveryTests(unittest.TestCase):
         runner = runner_class("sid", session, socket, frame_ack=True)
         runner._frames.clock = lambda: now[0]
         runner._frames.max_in_flight = 3
-        runner.set_agent_in_turn_and_current_experience = Mock(return_value=(agent, False, 0, []))
         actions = []
 
         def step(action):
