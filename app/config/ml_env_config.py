@@ -11,7 +11,7 @@ class EnvironmentConfig:
     weights_path: str
     num_actions: int
     agents: list[str]
-    observation_space: tuple[int, ...]
+    observation_space: tuple[int, ...] = (84, 84, 4)
     env: Optional[Callable] = field(default=None)
     lock: threading.Lock = field(default_factory=threading.Lock)
     
@@ -29,10 +29,8 @@ ENVIRONMENTS = {
             render_mode=render_mode),
         num_actions=18,
         agents=['first_0', 'second_0'],
-        observation_space=(52, 40, 1)
-        # observation_space=(210, 160, 3)
     ),
-    "Tennis": EnvironmentConfig(
+    'Tennis': EnvironmentConfig(
         name='tennis_v3',
         KEY_MAP={
             "8": 2, "6": 3, "4": 4,
@@ -43,13 +41,11 @@ ENVIRONMENTS = {
             "z": 9, "s": 1, "0": 0
         },
         model_path="./resources/models/keras/tennis_v3.keras",
-        weights_path="./resources/models/keras/tennis_v3_weights.weights.h5",
+        weights_path="./resources/models/keras/tennis_v3.weights.h5",
         env=lambda render_mode="rgb_array": tennis_v3.env(
             render_mode=render_mode),
         num_actions=18,
         agents=['first_0', 'second_0'],
-        observation_space=(52, 40, 1)
-        # observation_space=(210, 160, 3)
     ),
     'Wizard of War': EnvironmentConfig(
         name='wizard_of_wor_v3',
@@ -59,13 +55,11 @@ ENVIRONMENTS = {
             "3": 7, "1": 8, "s": 0
         },
         model_path="./resources/models/keras/wizard_of_wor_v3.keras",
-        weights_path="./resources/models/keras/wizard_of_wor_v3_weights.weights.h5",
+        weights_path="./resources/models/keras/wizard_of_wor_v3.weights.h5",
         env=lambda render_mode="rgb_array": wizard_of_wor_v3.env(
             render_mode=render_mode),
         num_actions=9,
         agents=['first_0', 'second_0'],
-        observation_space=(52, 40, 1)
-        # observation_space=(210, 160, 3)
     ),
     'Mario Bros': EnvironmentConfig(
         name='mario_bros_v3',
@@ -78,13 +72,11 @@ ENVIRONMENTS = {
             "z": 9, "s": 1, "0": 0
         },
         model_path="./resources/models/keras/mario_bros_v3.keras",
-        weights_path="./resources/models/keras/mario_bros_v3_weights.weights.h5",
+        weights_path="./resources/models/keras/mario_bros_v3.weights.h5",
         env=lambda render_mode="rgb_array": mario_bros_v3.env(
             render_mode=render_mode),
         num_actions=18,
         agents=['first_0', 'second_0'],
-        observation_space=(52, 40, 1)
-        # observation_space=(210, 160, 3)
     ),
     'Ice Hockey': EnvironmentConfig(
         name='ice_hockey_v2',
@@ -97,13 +89,11 @@ ENVIRONMENTS = {
             "z": 9, "s": 1, "0": 0
         },
         model_path="./resources/models/keras/ice_hockey_v2.keras",
-        weights_path="./resources/models/keras/ice_hockey_v2_weights.weights.h5",
+        weights_path="./resources/models/keras/ice_hockey_v2.weights.h5",
         env=lambda render_mode="rgb_array": ice_hockey_v2.env(
             render_mode=render_mode),
         num_actions=18,
         agents=['first_0', 'second_0'],
-        observation_space=(52, 40, 1)
-        # observation_space=(210, 160, 3)
     ),
     'Double Dunk': EnvironmentConfig(
         name='double_dunk_v3',
@@ -116,41 +106,35 @@ ENVIRONMENTS = {
             "z": 9, "s": 1, "0": 0
         },
         model_path="./resources/models/keras/double_dunk_v3.keras",
-        weights_path="./resources/models/keras/double_dunk_v3_weights.weights.h5",
+        weights_path="./resources/models/keras/double_dunk_v3.weights.h5",
         env=lambda render_mode="rgb_array": double_dunk_v3.env(
             render_mode=render_mode),
         num_actions=18,
         agents=['first_0', 'second_0'],
-        observation_space=(52, 40, 1)
-        # observation_space=(210, 160, 3)
     ),
     'Pong': EnvironmentConfig(
-        name='pong_v3_model',
+        name='pong_v3',
         KEY_MAP={
             "4": 3, "6": 2, "s": 1, "0": 0
         },
-        model_path="./resources/models/keras/pong_v3_model.keras",
-        weights_path="./resources/models/keras/pong_v3_weights.weights.h5",
+        model_path="./resources/models/keras/pong_v3.keras",
+        weights_path="./resources/models/keras/pong_v3.weights.h5",
         env=lambda render_mode="rgb_array": pong_v3.env(
             render_mode=render_mode),
         num_actions=6,
         agents=['first_0', 'second_0'],
-        observation_space=(52, 40, 1)
-        # observation_space=(210, 160, 3)
     ),
-    "Space Invaders": EnvironmentConfig(
+    'Space Invaders': EnvironmentConfig(
         name='space_invaders_v2',
         KEY_MAP={
             "8": 2, "6": 4, "4": 3, "2": 5, "s": 1,  "0": 0
         },
         model_path="./resources/models/keras/space_invaders_v2.keras",
-        weights_path="./resources/models/keras/space_invaders_v2_weights.weights.h5",
+        weights_path="./resources/models/keras/space_invaders_v2.weights.h5",
         env=lambda render_mode="rgb_array": space_invaders_v2.env(
             render_mode=render_mode),
         num_actions=6,
         agents=['first_0', 'second_0'],
-        observation_space=(52, 40, 1)
-        # observation_space=(210, 160, 3)
     )
 }
 

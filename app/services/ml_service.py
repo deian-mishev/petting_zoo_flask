@@ -146,7 +146,7 @@ class MLService:
         Builds a shared Q-network with multiple heads.
 
         Args:
-            input_shape: (52, 40, 1)
+            input_shape: (height, width, stacked_frames)
             dict like {"wizard_of_wor_v3": 9, "mario_bros_v3": 18}
         Returns:
             model: tf.keras.Model with multiple outputs for pro player

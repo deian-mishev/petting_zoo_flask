@@ -10,6 +10,7 @@ from types import ModuleType, SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
+import numpy as np
 import tensorflow as tf
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
@@ -115,6 +116,29 @@ class RunnerMetricsTests(unittest.TestCase):
         with patch.dict(sys.modules, stubs):
             runner_class = runpy.run_path(str(ROOT / "app/services/session_runner.py"))["SessionRunner"]
         self.runner = runner_class("test", self.session, None)
+
+    def test_frame_stack_keeps_seats_separate_and_resets_each_episode(self):
+        second = SimpleNamespace(type=self.agent.type, total_reward=0, current_experience=None,
+                                 q_network=Mock(return_value=[0]), memory_buffer=[])
+        self.session.env_config.observation_space = (2, 2, 4)
+        self.session.agents["second_0"] = second
+        names = ("first_0", "second_0") * 3
+        self.env.agent_iter.side_effect = lambda: iter(names)
+        self.env.last.side_effect = [
+            (np.full((2, 2, 1), value), 0, index >= 4, False, {})
+            for episode in ((1, 11, 2, 12, 3, 13), (4, 14, 5, 15, 6, 16))
+            for index, value in enumerate(episode)
+        ]
+
+        self.runner._run_training_episodes(2, Mock(updates=defaultdict(int)))
+
+        for player, initial in ((self.agent, 1), (second, 11)):
+            first, terminal, next_episode, _ = player.memory_buffer
+            self.assertEqual(first.state.dtype, np.uint8)
+            self.assertEqual(first.state[0, 0].tolist(), [initial] * 4)
+            self.assertEqual(first.next_state[0, 0].tolist(), [initial] * 3 + [initial + 1])
+            self.assertEqual(terminal.next_state[0, 0].tolist(), [initial] * 2 + [initial + 1, initial + 2])
+            self.assertEqual(next_episode.state[0, 0].tolist(), [initial + 3] * 4)
 
     def test_completed_match_notifies_during_update_and_trains_once(self):
         self.session.current_agent = None

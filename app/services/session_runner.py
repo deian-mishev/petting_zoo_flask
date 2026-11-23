@@ -1,6 +1,7 @@
 import threading
 import time
 from collections import Counter
+import numpy as np
 import tensorflow as tf
 from flask_socketio import SocketIO
 from app import app
@@ -21,6 +22,7 @@ class SessionRunner:
         self._stop_event = threading.Event()
         self._running_thread = None
         self._transitions = Counter()
+        self._observation_history = {}
         self._match_update = None
         self._frames = FrameDelivery(
             lambda frame, **kwargs: self.socketio.emit('frame', frame, room=self.sid, **kwargs),
@@ -100,6 +102,7 @@ class SessionRunner:
             for agent in self.session.agents.values():
                 agent.total_reward = 0
             self._transitions.clear()
+            self._observation_history.clear()
             shaped_rewards = {name: 0.0 for name in self.session.agents}
             episode_epsilon = {name: ml_service.training_progress(agent, self.session.env_config.name)["epsilon"]
                                for name, agent in self.session.agents.items()}
@@ -149,12 +152,21 @@ class SessionRunner:
         agent = self.session.current_agent
         obs, reward, terminated, truncated, _ = self.session.env.last()
         done = terminated or truncated
-        observation = ml_service.preprocess_state(
-            self.session.env_config.observation_space, obs)
+        shape = self.session.env_config.observation_space
+        observation = ml_service.preprocess_state(shape, obs)
+        frame_count = shape[-1]
+        if frame_count > 1:
+            history = self._observation_history.get(id(agent), ())
+            # Replay converts these pixels to float32 when sampling a batch.
+            history = (*history, observation.astype(np.uint8))[-frame_count:]
+            padding = (history[0],) * (frame_count - len(history))
+            observation = np.concatenate(padding + history, axis=-1)
 
         # PettingZoo requires a None step to consume a finished agent's turn.
         action = None if done else self._select_action(agent, observation)
         self.session.env.step(action)
+        if frame_count > 1:
+            self._observation_history[id(agent)] = history
 
         agent.total_reward += reward
         shaped_reward = 0.0

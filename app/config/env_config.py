@@ -9,8 +9,8 @@ FLASK_RUN_PORT= os.getenv("FLASK_RUN_PORT")
 AGENT_VID_HEIGHT = os.getenv("AGENT_VID_HEIGHT")
 AGENT_VID_WIDTH = os.getenv("AGENT_VID_WIDTH")
 
-ATTARI_PRO_MODEL=os.getenv("ATTARI_PRO_MODEL")
-ATTARI_PRO_WEIGHTS_PATH=os.getenv("ATTARI_PRO_WEIGHTS_PATH")
+ATTARI_PRO_MODEL = os.getenv("ATTARI_PRO_MODEL")
+ATTARI_PRO_WEIGHTS_PATH = os.getenv("ATTARI_PRO_WEIGHTS_PATH")
 ATTARI_PRO_LOCK = eventlet.semaphore.Semaphore()
 
 SEED = 0                        # seed for the pseudo-random number generator.

@@ -45,16 +45,16 @@ without login for previews to work.
 
 ## Supported Environments
 
-| Environment       | PettingZoo Module       | Actions | Observation   |
-|-------------------|-------------------------|---------|---------------|
-| Boxing            | `boxing_v2`             | 18      | (52, 40, 1)   |
-| Tennis            | `tennis_v3`             | 18      | (52, 40, 1)   |
-| Wizard of Wor     | `wizard_of_wor_v3`      | 9       | (52, 40, 1)   |
-| Mario Bros        | `mario_bros_v3`         | 18      | (52, 40, 1)   |
-| Ice Hockey        | `ice_hockey_v2`         | 18      | (52, 40, 1)   |
-| Double Dunk       | `double_dunk_v3`        | 18      | (52, 40, 1)   |
-| Pong              | `pong_v3`               | 6       | (52, 40, 1)   |
-| Space Invaders    | `space_invaders_v2`     | 6       | (52, 40, 1)   |
+| Environment       | PettingZoo Module       | Actions |
+|-------------------|-------------------------|---------|
+| Boxing            | `boxing_v2`             | 18      |
+| Tennis            | `tennis_v3`             | 18      |
+| Wizard of Wor     | `wizard_of_wor_v3`      | 9       |
+| Mario Bros        | `mario_bros_v3`         | 18      |
+| Ice Hockey        | `ice_hockey_v2`         | 18      |
+| Double Dunk       | `double_dunk_v3`        | 18      |
+| Pong              | `pong_v3`               | 6       |
+| Space Invaders    | `space_invaders_v2`     | 6       |
 
 ## Player Types
 
@@ -69,12 +69,16 @@ All agents use a Deep Q-Network trained with experience replay.
 
 **Preprocessing pipeline:**
 ```
-RGB frame → Grayscale → Resize to (52, 40) → Normalize [0, 1] → shape (52, 40, 1)
+RGB frame → Grayscale → Resize to 84 × 84 → Stack four frames → Normalize [0, 1]
 ```
+
+Every environment uses four frames ordered oldest to newest, with each player's
+first frame repeated at the beginning of the match. Regular models and the
+shared Atari Pro model use fresh checkpoint paths with the `_84x84x4` suffix.
 
 **Network (single-head):**
 ```
-Input (52, 40, 1)
+Input (height, width, frames)
 → Rescaling (÷255)
 → Conv2D(32, 8×8, stride=4) + ReLU
 → Conv2D(64, 4×4, stride=2) + ReLU
