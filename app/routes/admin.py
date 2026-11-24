@@ -9,7 +9,7 @@ from app.config.env_config import *
 from app.config.oauth2_config import token_required_api
 from app.validation import validate_env, validate_players
 from app.config.player_state import PlayerType
-from app.services.session import populate_session_agents
+from app.services.session import cleanup_session, populate_session_agents, reserve_session
 
 
 @app.route('/train', methods=['POST'])
@@ -52,23 +52,25 @@ def train():
         env=env
     )
     populate_session_agents(session_state, env_config, players)
+    if not reserve_session(sid, session_state):
+        env.close()
+        return jsonify({"error": "A selected model is currently in use or updating"}), 409
     try:
         ml_service.load_model(sid, session_state, obs_shape, num_actions)
     except Exception:
         app.logger.exception(f"{sid}: Failed to load training models")
-        try:
-            env.close()
-        except Exception:
-            app.logger.exception(f"{sid}: Failed to close training environment")
+        cleanup_session(sid, False)
         return jsonify({"error": "Training models are unavailable. Please try again later."}), 503
     session_state.agent_iter = agent_iter
     session_state.current_agent = session_state.agents[current_agent]
 
-    session_state.runner = SessionRunner(
-        sid, session_state, None)
-    session_state.runner.start_training(episodes)
-    with client_sessions_lock:
-        client_sessions[sid] = session_state
+    try:
+        session_state.runner = SessionRunner(sid, session_state, None)
+        session_state.runner.start_training(episodes)
+    except Exception:
+        app.logger.exception(f"{sid}: Failed to start training")
+        cleanup_session(sid, False)
+        return jsonify({"error": "Training could not start. Please try again later."}), 503
     return {"success": True, "message": "Training started"}, 200
 
 

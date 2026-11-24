@@ -10,7 +10,7 @@ from app.config.ml_env_config import EnvironmentConfig, ENVIRONMENTS
 from app.config.env_config import *
 from app.config.oauth2_config import login_required, roles_required
 from app.validation import validate_env_players_comb
-from app.services.session import cleanup_session, get_available_environments_and_nemesis, populate_session_agents
+from app.services.session import cleanup_session, get_available_environments_and_nemesis, populate_session_agents, reserve_session
 
 @app.route('/preconnect', methods=['GET'])
 @login_required
@@ -61,24 +61,25 @@ def on_connect(auth=None):
     )
 
     populate_session_agents(session_state, env_config, players)
+    if not reserve_session(sid, session_state):
+        env.close()
+        raise ConnectionRefusedError("A selected model is currently in use or updating. Please try again shortly.")
     try:
         ml_service.load_model(sid, session_state, obs_shape, num_actions)
     except Exception as error:
         app.logger.exception(f"{sid}: Failed to load game models")
-        try:
-            env.close()
-        except Exception:
-            app.logger.exception(f"{sid}: Failed to close game environment")
+        cleanup_session(sid, False)
         raise ConnectionRefusedError("Game models are unavailable. Please try again later.") from error
     session_state.agent_iter = agent_iter
     session_state.current_agent = session_state.agents[current_agent]
 
-    with client_sessions_lock:
-        client_sessions[sid] = session_state
-
-    session_state.runner = SessionRunner(
-        sid, session_state, socketio, frame_ack=request.args.get('frame_ack') == '1')
-    session_state.runner.start()
+    try:
+        session_state.runner = SessionRunner(
+            sid, session_state, socketio, frame_ack=request.args.get('frame_ack') == '1')
+        session_state.runner.start()
+    except Exception as error:
+        cleanup_session(sid, False)
+        raise ConnectionRefusedError("Game could not start. Please try again later.") from error
 
 
 @socketio.on('input')

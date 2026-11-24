@@ -48,6 +48,18 @@ class CheckpointStartupTests(unittest.TestCase):
         def roles_required(*args, **kwargs):
             return identity
 
+        def reserve(sid, session):
+            self.sessions[sid] = session
+            return True
+
+        def cleanup(sid, from_field=True):
+            session = self.sessions.pop(sid, None)
+            if session:
+                try:
+                    session.env.close()
+                except Exception:
+                    pass
+
         stubs = {
             "app": module("app", app=self.app, socketio=self.socketio,
                           client_sessions=self.sessions, client_sessions_lock=threading.Lock()),
@@ -65,7 +77,8 @@ class CheckpointStartupTests(unittest.TestCase):
                                      validate_players=lambda players: (True, players),
                                      validate_env_players_comb=lambda *_: (True, {"first_0": "ai_regular"})),
             "app.services.session": module(
-                "session", cleanup_session=Mock(), populate_session_agents=Mock(),
+                "session", cleanup_session=Mock(side_effect=cleanup), populate_session_agents=Mock(),
+                reserve_session=reserve,
                 get_available_environments_and_nemesis=lambda: ([], ["ai_regular"]),
             ),
         }

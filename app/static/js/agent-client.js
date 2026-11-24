@@ -211,13 +211,20 @@ function cleanup(message = '') {
     previousSocket?.disconnect();
     matchStatus.textContent = message;
     checkEnableStart();
+    refreshAvailability();
 }
 
-fetch('/preconnect')
+function refreshAvailability() {
+    if (socket) return;
+    fetch('/preconnect')
     .then(response => response.json())
     .then(data => {
+        if (socket) return;
+        const selectedEnvironment = envSelect.value;
+        const selectedPlayers = Array.from(playerConfigDiv.querySelectorAll("select"), select => select.value);
         environments = data.environments;
         aiPlayers = data.ai_players;
+        envSelect.innerHTML = "";
 
         environments.forEach(env => {
             const option = document.createElement("option");
@@ -227,8 +234,14 @@ fetch('/preconnect')
             envAgentsMap[env.name] = env.agents;
         });
         if (environments.length > 0) {
-            envSelect.value = environments[0].name;
-            renderPlayerConfig(environments[0].name);
+            envSelect.value = environments.some(env => env.name === selectedEnvironment)
+                ? selectedEnvironment : environments[0].name;
+            renderPlayerConfig(envSelect.value);
+            playerConfigDiv.querySelectorAll("select").forEach((select, index) => {
+                if (aiPlayers.includes(selectedPlayers[index])) select.value = selectedPlayers[index];
+            });
+        } else {
+            playerConfigDiv.innerHTML = "";
         }
 
         checkEnableStart();
@@ -236,6 +249,11 @@ fetch('/preconnect')
     .catch(err => {
         console.error("AI Service is down:", err);
     });
+}
+
+refreshAvailability();
+window.addEventListener("focus", refreshAvailability);
+setInterval(refreshAvailability, 5000);
 
 envSelect.addEventListener("change", () => renderPlayerConfig(envSelect.value));
 
