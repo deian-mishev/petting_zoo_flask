@@ -45,6 +45,7 @@ function browser() {
         window: { addEventListener(name, fn) { windowHandlers[name] = fn; } },
         ResizeObserver: class { observe() {} },
         fetch: () => new Promise(() => {}),
+        setInterval() { return 1; },
         requestAnimationFrame() { return 1; }, cancelAnimationFrame() {},
         capture: (event, keys) => emitted.push({ event, keys: Array.from(keys) }),
     });

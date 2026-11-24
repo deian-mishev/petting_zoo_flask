@@ -22,6 +22,8 @@ def module(name, **values):
 
 
 class PlayerType(str, Enum):
+    COMPUTER = "ai_regular"
+    ATARI_PRO = "atari_ai_pro"
     HUMAN = "human"
 
 
@@ -32,33 +34,24 @@ class CheckpointStartupTests(unittest.TestCase):
         self.socketio = SocketIO(self.app, async_mode="threading")
         self.sessions = {}
         self.environment = Mock()
-        self.environment.agent_iter.return_value = iter(["first_0"])
+        self.environment.agent_iter.side_effect = lambda: iter(["first_0"])
         self.config = SimpleNamespace(
             env=Mock(return_value=self.environment), num_actions=18, observation_space=(52, 40, 1),
+            name="boxing", agents=["first_0"], lock=threading.Lock(),
+            model_path="boxing.keras", weights_path="boxing.weights.h5",
         )
+        self.players = {"first_0": "ai_regular"}
         self.service = Mock()
         self.runner = Mock()
 
         def new_session(**values):
-            return SimpleNamespace(**values, agents={"first_0": SimpleNamespace()})
+            return SimpleNamespace(**values, agents={}, runner=None)
 
         def identity(handler):
             return handler
 
         def roles_required(*args, **kwargs):
             return identity
-
-        def reserve(sid, session):
-            self.sessions[sid] = session
-            return True
-
-        def cleanup(sid, from_field=True):
-            session = self.sessions.pop(sid, None)
-            if session:
-                try:
-                    session.env.close()
-                except Exception:
-                    pass
 
         stubs = {
             "app": module("app", app=self.app, socketio=self.socketio,
@@ -67,22 +60,30 @@ class CheckpointStartupTests(unittest.TestCase):
             "app.services.human_input": module("human_input", resolve_human_action=resolve_human_action),
             "app.services.session_runner": module("session_runner", SessionRunner=self.runner),
             "app.config.session_state": module("session_state", SessionState=new_session),
-            "app.config.player_state": module("player_state", PlayerType=PlayerType),
+            "app.config.player_state": module("player_state", PlayerType=PlayerType,
+                                              PlayerState=SimpleNamespace),
             "app.config.ml_env_config": module("ml_env_config", EnvironmentConfig=SimpleNamespace,
                                                ENVIRONMENTS={"Boxing": self.config}),
-            "app.config.env_config": module("env_config"),
+            "app.config.env_config": module("env_config", ATTARI_PRO_LOCK=threading.Lock(),
+                                             ATTARI_PRO_MODEL="pro.keras",
+                                             ATTARI_PRO_WEIGHTS_PATH="pro.weights.h5"),
             "app.config.oauth2_config": module("oauth2_config", login_required=identity,
                                                roles_required=roles_required, token_required_api=roles_required),
             "app.validation": module("validation", validate_env=lambda _: True,
                                      validate_players=lambda players: (True, players),
-                                     validate_env_players_comb=lambda *_: (True, {"first_0": "ai_regular"})),
-            "app.services.session": module(
-                "session", cleanup_session=Mock(side_effect=cleanup), populate_session_agents=Mock(),
-                reserve_session=reserve,
-                get_available_environments_and_nemesis=lambda: ([], ["ai_regular"]),
-            ),
+                                     validate_env_players_comb=lambda *_: (True, self.players)),
         }
         with patch.dict(sys.modules, stubs):
+            # Exercise the production reservation/cleanup code. Stubbing these
+            # hides whether a refresh releases a model before its update ends.
+            lifecycle = runpy.run_path(str(ROOT / "app/services/session.py"))
+            self.lifecycle = module("session", **{
+                name: lifecycle[name] for name in (
+                    "cleanup_session", "populate_session_agents", "reserve_session",
+                    "get_available_environments_and_nemesis",
+                )
+            })
+            sys.modules["app.services.session"] = self.lifecycle
             runpy.run_path(str(ROOT / "app/routes/api.py"))
             runpy.run_path(str(ROOT / "app/routes/admin.py"))
 
@@ -153,6 +154,63 @@ class CheckpointStartupTests(unittest.TestCase):
         self.assertTrue(client.is_connected())
         self.assertTrue(self.runner.call_args.kwargs["frame_ack"])
         client.disconnect()
+
+    def test_same_user_refresh_keeps_models_reserved_until_update_finishes(self):
+        self.players = {"first_0": "human"}
+        old_client = self.connect()
+        old_sid = next(iter(self.sessions))
+        self.addCleanup(lambda: old_client.disconnect() if old_client.is_connected() else None)
+
+        def while_updating():
+            self.assertIn(old_sid, self.sessions)
+            availability = self.client.get("/preconnect").get_json()
+            self.assertEqual(availability["environments"], [])
+            self.assertEqual(availability["ai_players"], ["ai_regular"])
+            self.assertFalse(self.connect().is_connected())
+            self.assertEqual(self.service.load_model.call_count, 1)
+            self.assertEqual(self.runner.call_count, 1)
+
+        self.runner.return_value.update_after_match.side_effect = while_updating
+        old_client.disconnect()
+        self.runner.return_value.stop.assert_called_once()
+        self.runner.return_value.update_after_match.assert_called_once()
+        self.assertEqual(self.sessions, {})
+        availability = self.client.get("/preconnect").get_json()
+        self.assertEqual([env["name"] for env in availability["environments"]], ["Boxing"])
+        self.assertIn("human", availability["ai_players"])
+        self.assertIn("atari_ai_pro", availability["ai_players"])
+
+        self.runner.return_value.update_after_match.side_effect = None
+        refreshed_client = self.connect()  # Reuse the same signed-in browser cookie.
+        self.assertTrue(refreshed_client.is_connected())
+        self.assertNotIn(old_sid, self.sessions)
+        self.assertEqual(len(self.sessions), 1)
+        refreshed_client.disconnect()
+
+    def test_late_old_transport_disconnect_does_not_remove_same_users_new_game(self):
+        old_client = self.connect()
+        old_eio_sid = old_client.eio_sid
+        old_sid = next(iter(self.sessions))
+        old_client.disconnect()
+
+        refreshed_client = self.connect()
+        self.addCleanup(lambda: refreshed_client.disconnect() if refreshed_client.is_connected() else None)
+        new_sid = next(iter(self.sessions))
+        self.assertNotEqual(old_sid, new_sid)
+        self.socketio.server._handle_eio_disconnect(old_eio_sid, "transport close")
+        self.assertTrue(refreshed_client.is_connected())
+        self.assertEqual(list(self.sessions), [new_sid])
+        self.assertEqual(self.runner.return_value.update_after_match.call_count, 1)
+
+    def test_transport_close_without_socket_disconnect_packet_cleans_up_game(self):
+        client = self.connect()
+        sid = next(iter(self.sessions))
+        self.socketio.server._handle_eio_disconnect(client.eio_sid, "transport close")
+        self.assertFalse(self.socketio.server.manager.is_connected(sid, "/"))
+        self.assertEqual(self.sessions, {})
+        self.runner.return_value.stop.assert_called_once()
+        self.runner.return_value.update_after_match.assert_called_once()
+        self.environment.close.assert_called_once()
 
     def test_training_storage_failure_returns_503_and_does_not_start_runner(self):
         self.service.load_model.side_effect = OSError("private storage details")
