@@ -120,8 +120,9 @@ class RunnerMetricsTests(unittest.TestCase):
     def test_frame_stack_keeps_seats_separate_and_resets_each_episode(self):
         second = SimpleNamespace(type=self.agent.type, total_reward=0, current_experience=None,
                                  q_network=Mock(return_value=[0]), memory_buffer=[])
-        self.session.env_config.observation_space = (2, 2, 4)
-        self.session.agents["second_0"] = second
+        self.session.env_config.observation_space = (2, 2, 5)
+        self.session.env_config.agents = ["first_0", "second_0"]
+        self.session.agents = {"second_0": second, "first_0": self.agent}
         names = ("first_0", "second_0") * 3
         self.env.agent_iter.side_effect = lambda: iter(names)
         self.env.last.side_effect = [
@@ -132,13 +133,13 @@ class RunnerMetricsTests(unittest.TestCase):
 
         self.runner._run_training_episodes(2, Mock(updates=defaultdict(int)))
 
-        for player, initial in ((self.agent, 1), (second, 11)):
+        for player, initial, identity in ((self.agent, 1, 0), (second, 11, 255)):
             first, terminal, next_episode, _ = player.memory_buffer
             self.assertEqual(first.state.dtype, np.uint8)
-            self.assertEqual(first.state[0, 0].tolist(), [initial] * 4)
-            self.assertEqual(first.next_state[0, 0].tolist(), [initial] * 3 + [initial + 1])
-            self.assertEqual(terminal.next_state[0, 0].tolist(), [initial] * 2 + [initial + 1, initial + 2])
-            self.assertEqual(next_episode.state[0, 0].tolist(), [initial + 3] * 4)
+            self.assertEqual(first.state[0, 0].tolist(), [initial] * 4 + [identity])
+            self.assertEqual(first.next_state[0, 0].tolist(), [initial] * 3 + [initial + 1, identity])
+            self.assertEqual(terminal.next_state[0, 0].tolist(), [initial] * 2 + [initial + 1, initial + 2, identity])
+            self.assertEqual(next_episode.state[0, 0].tolist(), [initial + 3] * 4 + [identity])
 
     def test_completed_match_notifies_during_update_and_trains_once(self):
         self.session.current_agent = None

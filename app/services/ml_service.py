@@ -316,6 +316,11 @@ class MLService:
 
     def _load_networks(self, model_path, weights_path, player_type, obs_shape, num_actions):
         q_network = tf.keras.models.load_model(model_path)
+        if tuple(q_network.input_shape[1:]) != tuple(obs_shape):
+            raise ValueError(
+                f"Checkpoint input shape {q_network.input_shape[1:]} "
+                f"does not match required shape {obs_shape}: {model_path}"
+            )
         if getattr(q_network, "optimizer", None) is None:
             raise ValueError(f"Loaded model has no optimizer: {model_path}")
         if player_type in [PlayerType.HUMAN, PlayerType.ATARI_PRO]:

@@ -69,12 +69,14 @@ All agents use a Deep Q-Network trained with experience replay.
 
 **Preprocessing pipeline:**
 ```
-RGB frame → Grayscale → Resize to 84 × 84 → Stack four frames → Normalize [0, 1]
+RGB frame → Grayscale → Resize to 84 × 84 → Stack four frames → Add player identity → Normalize [0, 1]
 ```
 
 Every environment uses four frames ordered oldest to newest, with each player's
-first frame repeated at the beginning of the match. Regular models and the
-shared Atari Pro model use fresh checkpoint paths with the `_84x84x4` suffix.
+first frame repeated at the beginning of the match. A fifth channel identifies
+the player, using 0 for `first_0` and 255 for `second_0`. The resulting model
+input has shape (84, 84, 5). Checkpoints created for four-channel models must be
+replaced before training the new model.
 
 **Network (single-head):**
 ```

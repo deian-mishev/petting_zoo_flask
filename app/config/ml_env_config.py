@@ -11,7 +11,7 @@ class EnvironmentConfig:
     weights_path: str
     num_actions: int
     agents: list[str]
-    observation_space: tuple[int, ...] = (84, 84, 4)
+    observation_space: tuple[int, ...] = (84, 84, 5)
     env: Optional[Callable] = field(default=None)
     lock: threading.Lock = field(default_factory=threading.Lock)
     

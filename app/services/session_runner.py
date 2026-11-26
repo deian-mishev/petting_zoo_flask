@@ -154,13 +154,16 @@ class SessionRunner:
         done = terminated or truncated
         shape = self.session.env_config.observation_space
         observation = ml_service.preprocess_state(shape, obs)
-        frame_count = shape[-1]
+        frame_count = shape[-1] - 1 if shape[-1] > 1 else 1
         if frame_count > 1:
             history = self._observation_history.get(id(agent), ())
             # Replay converts these pixels to float32 when sampling a batch.
             history = (*history, observation.astype(np.uint8))[-frame_count:]
             padding = (history[0],) * (frame_count - len(history))
-            observation = np.concatenate(padding + history, axis=-1)
+            player_index = next(index for index, name in enumerate(self.session.env_config.agents)
+                                if self.session.agents[name] is agent)
+            identity = np.full_like(history[0], 255 * player_index)
+            observation = np.concatenate(padding + history + (identity,), axis=-1)
 
         # PettingZoo requires a None step to consume a finished agent's turn.
         action = None if done else self._select_action(agent, observation)
