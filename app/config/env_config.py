@@ -22,12 +22,16 @@ GAMMA = 0.997                   # discount factor
 ALPHA = 1e-3                    # learning rate
 MEMORY_SIZE = 10_000            # size of memory buffer
 EPSILON = 1.0             # initial rate of random modle choices
+_epsilon_override = os.getenv("EPSILON_OVERRIDE", "").strip()
+EPSILON_OVERRIDE = float(_epsilon_override) if _epsilon_override else None
+if EPSILON_OVERRIDE is not None and not 0 <= EPSILON_OVERRIDE <= 1:
+    raise ValueError("EPSILON_OVERRIDE must be between 0 and 1")
 E_DECAY = 0.95            # e-decay rate for the e-greedy policy.
 E_GROW = 1.001            # e-grow rate for the e-greedy policy.
 E_MIN = 0.01              # minimum ε value for the e-greedy policy.
 E_MAX = 1.0               # max ε value for the e-greedy policy.
 
-INACTIVITY_TO = -1        # reward equals to O inactivity is punished to 
+INACTIVITY_TO = float(os.getenv("INACTIVITY_TO", "-1"))  # reward for zero-reward steps
 REWARD_POS_FACTOR = 5     # positive reward multiplication factor
 REWARD_NEG_FACTO = 3      # negative reward multiplication factor
 

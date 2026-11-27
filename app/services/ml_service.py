@@ -384,6 +384,12 @@ class MLService:
             # Initialize slots without taking an optimizer step or changing restored weights.
             if not player_state.optimizer.built:
                 player_state.optimizer.build(player_state.q_network.trainable_variables)
+            if EPSILON_OVERRIDE is not None:
+                progress = self.training_progress(player_state, session_state.env_config.name)
+                progress["epsilon"] = EPSILON_OVERRIDE
+                app.logger.info(
+                    f"{sid}: Epsilon overridden to {EPSILON_OVERRIDE} for "
+                    f"{player_state.type.value} in {session_state.env_config.name}")
 
 
 ml_service = MLService()

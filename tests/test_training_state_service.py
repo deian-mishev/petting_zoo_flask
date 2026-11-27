@@ -39,7 +39,7 @@ class TrainingStateServiceTests(unittest.TestCase):
             "cv2": module(), "numpy": module(ndarray=object),
             "tensorflow": module(function=identity_function, random=Mock()),
             "app": module(app=SimpleNamespace(logger=Mock())),
-            "app.config.env_config": module(SEED=0, EPSILON=1.0, E_MIN=.01, E_DECAY=.95,
+            "app.config.env_config": module(SEED=0, EPSILON=1.0, EPSILON_OVERRIDE=None, E_MIN=.01, E_DECAY=.95,
                 MINIBATCH_SIZE=128, TRANSITIONS_PER_UPDATE=64, MAX_UPDATES_PER_PLAYER=50),
             "app.config.ml_env_config": module(ATTARI_PRO_MODEL_HEADS={}),
             "app.config.session_state": module(SessionState=object),
@@ -116,6 +116,40 @@ class TrainingStateServiceTests(unittest.TestCase):
         self.assertIs(self.agent.training_state, self.session.agents["second"].training_state)
         self.assertIs(self.agent.q_network, network)
         self.assertEqual(self.agent.checkpoint_generation, "loaded")
+
+    def test_override_is_applied_on_load_and_saved_with_normal_decay(self):
+        from contextlib import contextmanager
+
+        @contextmanager
+        def checkpoint(*args):
+            yield ("model.keras", "target.h5"), "loaded"
+
+        state = {"schema_version": 1, "environments": {
+            "boxing_v2": {"epsilon": .01, "completed_episodes": 20, "environment_steps": 40},
+            "pong": {"epsilon": .2, "completed_episodes": 5, "environment_steps": 10},
+        }}
+        optimizer = Mock(built=True)
+        network = Mock(optimizer=optimizer)
+        self.service._load_networks = Mock(return_value=(network, Mock()))
+        self.session.agents["second"] = copy.copy(self.agent)
+        globals_patch = {"load_model_checkpoint": checkpoint,
+                         "load_training_state": Mock(return_value=copy.deepcopy(state)),
+                         "EPSILON_OVERRIDE": .3}
+        with patch.dict(self.service.load_model.__globals__, globals_patch):
+            self.service.load_model("test", self.session, (52, 40, 1), 18)
+            self.assertEqual(self.service.training_progress(self.agent, "boxing_v2")["epsilon"], .3)
+            self.assertIs(self.agent.training_state, self.session.agents["second"].training_state)
+            self.service.train_model("test", self.session, episode_steps=25)
+            saved = copy.deepcopy(self.save.call_args.kwargs["training_state"])
+
+        self.assertAlmostEqual(saved["environments"]["boxing_v2"]["epsilon"], .285)
+        self.assertEqual(saved["environments"]["pong"], state["environments"]["pong"])
+        with patch.dict(self.service.load_model.__globals__, {
+            "load_model_checkpoint": checkpoint, "load_training_state": Mock(return_value=saved),
+            "EPSILON_OVERRIDE": None,
+        }):
+            self.service.load_model("test", self.session, (52, 40, 1), 18)
+            self.assertAlmostEqual(self.service.training_progress(self.agent, "boxing_v2")["epsilon"], .285)
 
 
 class RunnerCheckpointFailureTests(unittest.TestCase):
